@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	DefaultCalendar  string   `mapstructure:"default_calendar"`
-	WorkingHoursFrom string   `mapstructure:"working_hours_from"` // "09:00"
-	WorkingHoursTo   string   `mapstructure:"working_hours_to"`   // "18:00"
-	WorkingDays      []string `mapstructure:"working_days"`       // ["Mon","Tue","Wed","Thu","Fri"]
-	MinFreeSlot      int      `mapstructure:"min_free_slot_min"`  // minimum free slot in minutes
-	Google           GoogleConfig `mapstructure:"google"`
+	DefaultCalendar     string       `mapstructure:"default_calendar"`
+	WorkingHoursFrom    string       `mapstructure:"working_hours_from"`
+	WorkingHoursTo      string       `mapstructure:"working_hours_to"`
+	WorkingDays         []string     `mapstructure:"working_days"`
+	MinFreeSlot         int          `mapstructure:"min_free_slot_min"`
+	ExcludedCalendars   []string     `mapstructure:"excluded_calendars"`
+	Google              GoogleConfig `mapstructure:"google"`
 }
 
 type GoogleConfig struct {
@@ -45,6 +46,11 @@ func Load() error {
 	viper.SetDefault("working_hours_to", "18:00")
 	viper.SetDefault("working_days", []string{"Mon", "Tue", "Wed", "Thu", "Fri"})
 	viper.SetDefault("min_free_slot_min", 30)
+	viper.SetDefault("excluded_calendars", []string{
+		"Geburtstage", "Geburtstag", "Birthdays", "Birthday",
+		"Feiertage in Österreich", "Feiertage", "Holidays", "Holiday",
+		"Siri Suggestions",
+	})
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

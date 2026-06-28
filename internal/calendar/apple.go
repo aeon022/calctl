@@ -2,7 +2,9 @@ package calendar
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -10,17 +12,104 @@ import (
 	"github.com/google/uuid"
 )
 
-// FetchEvents returns all Apple Calendar events between from and to.
-func FetchEvents(from, to time.Time) ([]models.Event, error) {
-	script := buildFetchScript(from, to)
-	out, err := runAppleScript(script)
-	if err != nil {
-		return nil, fmt.Errorf("applescript: %w", err)
-	}
-	return parseEvents(out), nil
+// swiftScript is the embedded EventKit fetcher. It is written to disk on first
+// sync so that swift can JIT-cache it between runs.
+const swiftScript = `#!/usr/bin/swift
+import EventKit
+import Foundation
+
+let args = CommandLine.arguments
+guard args.count >= 3 else { fputs("usage: fetch_events.swift FROM TO\n", stderr); exit(1) }
+
+let fmt2 = ISO8601DateFormatter()
+fmt2.formatOptions = [.withInternetDateTime]
+
+guard let from = fmt2.date(from: args[1]), let to = fmt2.date(from: args[2]) else {
+    fputs("bad date args\n", stderr); exit(1)
 }
 
-// CreateEvent creates a new event in Apple Calendar.
+let store = EKEventStore()
+let sema = DispatchSemaphore(value: 0)
+
+store.requestFullAccessToEvents { granted, _ in
+    defer { sema.signal() }
+    guard granted else { fputs("Calendar access denied\n", stderr); return }
+
+    let pred = store.predicateForEvents(withStart: from, end: to, calendars: nil)
+    let events = store.events(matching: pred)
+
+    let local = ISO8601DateFormatter()
+    local.formatOptions = [.withYear, .withMonth, .withDay, .withTime,
+                           .withColonSeparatorInTime, .withDashSeparatorInDate]
+    local.timeZone = TimeZone.current
+
+    for evt in events {
+        guard let cal = evt.calendar else { continue }
+        if cal.type == .birthday || cal.type == .subscription { continue }
+        let title = evt.title ?? ""
+        let start = local.string(from: evt.startDate)
+        let end   = local.string(from: evt.endDate)
+        let loc   = evt.location ?? ""
+        let allday = evt.isAllDay ? "1" : "0"
+        let uid   = evt.eventIdentifier ?? ""
+        print("TITLE:\(title)\nSTART:\(start)\nEND:\(end)\nCAL:\(cal.title)\nLOC:\(loc)\nALLDAY:\(allday)\nUID:\(uid)\n---EVENT---")
+    }
+}
+sema.wait()
+`
+
+// scriptPath returns the path where the Swift helper is stored.
+func scriptPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "share", "calctl", "fetch_events.swift")
+}
+
+// ensureScript writes the embedded Swift script to disk if it doesn't exist or is outdated.
+func ensureScript() (string, error) {
+	p := scriptPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		return "", err
+	}
+	existing, _ := os.ReadFile(p)
+	if string(existing) != swiftScript {
+		if err := os.WriteFile(p, []byte(swiftScript), 0644); err != nil {
+			return "", err
+		}
+	}
+	return p, nil
+}
+
+// FetchEvents fetches events from Apple Calendar via EventKit (Swift helper).
+// Falls back to AppleScript if swift is unavailable.
+func FetchEvents(from, to time.Time) ([]models.Event, error) {
+	if _, err := exec.LookPath("swift"); err == nil {
+		return fetchViaEventKit(from, to)
+	}
+	return fetchViaAppleScript(from, to)
+}
+
+func fetchViaEventKit(from, to time.Time) ([]models.Event, error) {
+	script, err := ensureScript()
+	if err != nil {
+		return fetchViaAppleScript(from, to)
+	}
+
+	// ISO 8601 with timezone offset
+	fromStr := from.Format("2006-01-02T15:04:05-07:00")
+	toStr := to.Format("2006-01-02T15:04:05-07:00")
+
+	cmd := exec.Command("swift", script, fromStr, toStr)
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("swift: %s", string(exitErr.Stderr))
+		}
+		return nil, err
+	}
+	return parseEvents(strings.TrimSpace(string(out))), nil
+}
+
+// CreateEvent creates a new event in Apple Calendar via AppleScript.
 func CreateEvent(e *models.Event) error {
 	script := buildCreateScript(e)
 	_, err := runAppleScript(script)
@@ -51,43 +140,22 @@ end tell`
 	return cals, nil
 }
 
-// buildFetchScript produces a locale-independent AppleScript that dumps events.
-//
-// Date output strategy: use numeric date component properties (year, month, day,
-// hours, minutes, seconds) to build an ISO-8601 string — fully locale-independent
-// and always in local time, matching exactly what Apple Calendar displays.
-// This avoids all epoch arithmetic and DST ambiguity.
-//
-// Output format per event (separated by "---EVENT---"):
-//
-//	TITLE:<title>
-//	START:YYYY-MM-DDTHH:MM:SS   (local time)
-//	END:YYYY-MM-DDTHH:MM:SS     (local time)
-//	CAL:<calendar name>
-//	LOC:<location>
-//	ALLDAY:<0|1>
-//	UID:<uid>
-func buildFetchScript(from, to time.Time) string {
+// fetchViaAppleScript is the fallback when swift is not available.
+// It is slow on large calendar sets (birthday/holiday calendars especially).
+func fetchViaAppleScript(from, to time.Time) ([]models.Event, error) {
 	fromEpoch := from.Unix()
 	toEpoch := to.Unix()
 
-	return fmt.Sprintf(`
--- Build from/to dates using second offsets from now — locale-independent.
+	script := fmt.Sprintf(`
 set nowUnix to (do shell script "date '+%%s'") as integer
 set fromDate to (current date) + (%d - nowUnix)
 set toDate   to (current date) + (%d - nowUnix)
 
--- Zero-pad helper: returns a 2-digit string for a number 0-59
 on zp(n)
-	if n < 10 then
-		return "0" & (n as text)
-	else
-		return (n as text)
-	end if
+	if n < 10 then return "0" & (n as text)
+	return (n as text)
 end zp
 
--- Format a date object as "YYYY-MM-DDTHH:MM:SS" using numeric properties only.
--- This is always local time and locale-independent.
 on isoDate(d)
 	set yr to (year of d) as text
 	set mo to my zp(month of d as integer)
@@ -101,6 +169,7 @@ end isoDate
 set output to ""
 tell application "Calendar"
 	repeat with cal in calendars
+		if writable of cal then
 		set calName to name of cal
 		set evts to (every event of cal whose start date >= fromDate and start date <= toDate)
 		repeat with evt in evts
@@ -109,25 +178,29 @@ tell application "Calendar"
 			set e to my isoDate(end date of evt)
 			set evtLoc to ""
 			try
-				if location of evt is not missing value then
-					set evtLoc to location of evt
-				end if
+				if location of evt is not missing value then set evtLoc to location of evt
 			end try
 			set evtAD to 0
 			try
 				if allday event of evt then set evtAD to 1
 			end try
-			-- "uid" is a Calendar property name — use evtUID to avoid collision
 			set evtUID to ""
 			try
 				set evtUID to uid of evt
 			end try
 			set output to output & "TITLE:" & t & "\nSTART:" & s & "\nEND:" & e & "\nCAL:" & calName & "\nLOC:" & evtLoc & "\nALLDAY:" & evtAD & "\nUID:" & evtUID & "\n---EVENT---\n"
 		end repeat
+		end if
 	end repeat
 end tell
 return output
 `, fromEpoch, toEpoch)
+
+	out, err := runAppleScript(script)
+	if err != nil {
+		return nil, fmt.Errorf("applescript: %w", err)
+	}
+	return parseEvents(out), nil
 }
 
 func buildCreateScript(e *models.Event) string {
@@ -149,12 +222,10 @@ func buildCreateScript(e *models.Event) string {
 		allDayLine = "set allday event of newEvent to true"
 	}
 
-	// Build ISO strings for start/end in local time — AppleScript reads them back correctly.
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
 	endISO := e.EndTime.Format("2006-01-02T15:04:05")
 
 	return fmt.Sprintf(`
--- Parse ISO date strings via shell into AppleScript date objects (locale-independent).
 set startDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
 set endDate   to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
 
@@ -201,8 +272,8 @@ func parseEvents(raw string) []models.Event {
 			case "TITLE":
 				e.Title = val
 			case "START":
-				// AppleScript outputs local time as "YYYY-MM-DDTHH:MM:SS".
-				// Parse as local time to match exactly what Apple Calendar shows.
+				// EventKit outputs local time as "YYYY-MM-DDTHH:MM:SS" (no zone offset in local fmt)
+				// AppleScript also outputs the same format.
 				if t, err := time.ParseInLocation("2006-01-02T15:04:05", val, time.Local); err == nil {
 					e.StartTime = t
 				}
