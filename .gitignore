@@ -1,0 +1,22 @@
+# Binary
+calctl
+*.exe
+
+# Go build cache
+*.test
+*.out
+
+# Config & data (local only)
+*.db
+*.db-shm
+*.db-wal
+config.yaml
+google_token.json
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
