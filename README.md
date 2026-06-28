@@ -243,15 +243,19 @@ Launch the TUI with `calctl` (no arguments):
 
 | Key | Action |
 |-----|--------|
-| `↑` / `k` | Move up |
-| `↓` / `j` | Move down |
+| `↑` / `k` | Navigate up |
+| `↓` / `j` | Navigate down |
+| `←` / `h` | Previous week |
+| `→` / `l` | Next week |
 | `Enter` | Open event detail |
-| `s` | Sync Apple Calendar |
+| `s` | Sync Apple Calendar (current week) |
 | `f` | Show free slots view |
 | `+` or `]` | Show 7 more days |
 | `-` or `[` | Show 7 fewer days |
 | `Esc` / `Backspace` | Back to list |
 | `q` | Quit |
+
+The week navigation header (`◀ KW27 Mo Di Mi Do Fr Sa So ▶`) shows the current calendar week. Today is highlighted in blue, days with events in cyan.
 
 ### Event detail view
 
@@ -310,6 +314,14 @@ working_days: [Mon, Tue, Wed, Thu, Fri]
 
 # Minimum free slot duration in minutes
 min_free_slot_min: 30
+
+# Calendars to skip during sync (birthday/holiday calendars are slow and rarely useful)
+excluded_calendars:
+  - Geburtstage
+  - Birthdays
+  - Feiertage in Österreich
+  - Holidays
+  - Siri Suggestions
 
 # Google Calendar (v0.5 — coming soon)
 google:
@@ -376,9 +388,60 @@ Event Markdown format:
   Optional notes here.
 ```
 
-### MCP server
+### MCP server — Claude Code integration
 
-`calctl mcp` is planned for v1.0 — it will expose all commands as MCP tools for direct Claude Desktop integration.
+`calctl mcp` starts a local MCP server so Claude can call your calendar directly without copy-pasting JSON.
+
+#### 1. Install the binary
+
+```bash
+# Build and copy to your user bin
+go build -o calctl . && cp calctl ~/.local/bin/calctl
+# or if you have write access to /usr/local/bin:
+sudo cp calctl /usr/local/bin/calctl
+```
+
+#### 2. Register in Claude Code
+
+Add to `~/.claude.json` (create if it doesn't exist):
+
+```json
+{
+  "mcpServers": {
+    "calctl": {
+      "command": "/Users/YOU/.local/bin/calctl",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Replace `/Users/YOU` with your actual home directory (`echo $HOME`).
+
+Then **restart Claude Code**. You'll see calctl appear in the MCP tools list.
+
+#### 3. What Claude can now do
+
+| MCP Tool | What Claude calls |
+|----------|------------------|
+| `today` | "What's on today?" |
+| `this_week` | "Give me my week overview" |
+| `list_events(from, to)` | "What do I have from Oct 1–15?" |
+| `sync(days?)` | "Sync my calendar" |
+| `find_free_slots(from, to)` | "When am I free this week for a 1h meeting?" |
+| `create_event(title, start, end, ...)` | "Book team lunch Thursday 12:00–13:00" |
+
+#### Example prompts
+
+```
+"Was habe ich nächste Woche?"
+"Wann bin ich Mittwoch frei für ein 2h Deep-Work-Block?"
+"Erstell einen Termin: Zahnarzt, Montag 10:00–11:00, Kalender Privat"
+"Sync meinen Kalender und gib mir eine Übersicht der nächsten 3 Tage"
+```
+
+> **First sync**: Claude will call `sync` automatically when the cache is empty.  
+> macOS will ask for Calendar permission once — click **Allow**.
 
 ---
 
@@ -441,11 +504,12 @@ brew install go
 
 ## Roadmap
 
-| Version | Features |
-|---------|----------|
-| v0.1 | Apple Calendar sync, list, free slots, import, TUI |
-| v0.5 | Google Calendar OAuth2, TUI week view, `calctl calendars` |
-| v1.0 | MCP server (`calctl mcp`), recurring events, timezone awareness |
+| Version | Features | Status |
+|---------|----------|--------|
+| v0.1 | Apple Calendar sync, list, free slots, import, TUI | ✅ done |
+| v0.2 | MCP server (`calctl mcp`), fast EventKit sync via Swift, week navigation | ✅ done |
+| v0.5 | Google Calendar OAuth2, `calctl calendars` command | planned |
+| v1.0 | Recurring events, attendee invites, timezone config | planned |
 
 See [missionctl ROADMAP](../ROADMAP.md) for full timeline.
 
