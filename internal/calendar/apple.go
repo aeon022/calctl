@@ -3,7 +3,6 @@ package calendar
 import (
 	"fmt"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -54,19 +53,16 @@ end tell`
 
 // buildFetchScript produces a locale-independent AppleScript that dumps events.
 //
-// Key insight: on German macOS, `(date) as integer` fails because AppleScript routes
-// the coercion through a locale-dependent string representation. Instead we use:
-//   - `(current date) + N`  to build dates from second offsets   (date arithmetic ✓)
-//   - `date1 - date2`       to extract seconds between two dates  (always numeric ✓)
-//
-// We anchor against a reference date built from numeric properties (not strings),
-// then add the known Unix timestamp of AppleScript's epoch via one shell call.
+// Date output strategy: use numeric date component properties (year, month, day,
+// hours, minutes, seconds) to build an ISO-8601 string — fully locale-independent
+// and always in local time, matching exactly what Apple Calendar displays.
+// This avoids all epoch arithmetic and DST ambiguity.
 //
 // Output format per event (separated by "---EVENT---"):
 //
 //	TITLE:<title>
-//	START:<unix timestamp>
-//	END:<unix timestamp>
+//	START:YYYY-MM-DDTHH:MM:SS   (local time)
+//	END:YYYY-MM-DDTHH:MM:SS     (local time)
 //	CAL:<calendar name>
 //	LOC:<location>
 //	ALLDAY:<0|1>
@@ -76,21 +72,31 @@ func buildFetchScript(from, to time.Time) string {
 	toEpoch := to.Unix()
 
 	return fmt.Sprintf(`
--- Build AppleScript's epoch date using numeric properties — no locale string needed.
--- January is the AppleScript constant 1 regardless of locale.
-set appleEpochDate to current date
-set year of appleEpochDate to 2001
-set month of appleEpochDate to January
-set day of appleEpochDate to 1
-set time of appleEpochDate to 0
-
--- Get the Unix timestamp of that epoch moment via shell (also locale-independent).
-set appleEpochUnix to (do shell script "date -jf '%%Y-%%m-%%d %%H:%%M:%%S' '2001-01-01 00:00:00' '+%%s'") as integer
-
--- Build from/to dates using second offsets from now — avoids any date→string coercion.
+-- Build from/to dates using second offsets from now — locale-independent.
 set nowUnix to (do shell script "date '+%%s'") as integer
 set fromDate to (current date) + (%d - nowUnix)
 set toDate   to (current date) + (%d - nowUnix)
+
+-- Zero-pad helper: returns a 2-digit string for a number 0-59
+on zp(n)
+	if n < 10 then
+		return "0" & (n as text)
+	else
+		return (n as text)
+	end if
+end zp
+
+-- Format a date object as "YYYY-MM-DDTHH:MM:SS" using numeric properties only.
+-- This is always local time and locale-independent.
+on isoDate(d)
+	set yr to (year of d) as text
+	set mo to my zp(month of d as integer)
+	set dy to my zp(day of d)
+	set hr to my zp(hours of d)
+	set mi to my zp(minutes of d)
+	set sc to my zp(seconds of d)
+	return yr & "-" & mo & "-" & dy & "T" & hr & ":" & mi & ":" & sc
+end isoDate
 
 set output to ""
 tell application "Calendar"
@@ -99,9 +105,8 @@ tell application "Calendar"
 		set evts to (every event of cal whose start date >= fromDate and start date <= toDate)
 		repeat with evt in evts
 			set t to summary of evt
-			-- date - date = seconds (pure integer arithmetic, no locale involved)
-			set s to ((start date of evt) - appleEpochDate) + appleEpochUnix
-			set e to ((end date of evt) - appleEpochDate) + appleEpochUnix
+			set s to my isoDate(start date of evt)
+			set e to my isoDate(end date of evt)
 			set evtLoc to ""
 			try
 				if location of evt is not missing value then
@@ -112,7 +117,7 @@ tell application "Calendar"
 			try
 				if allday event of evt then set evtAD to 1
 			end try
-			-- "uid" is a Calendar property name — use evtUID to avoid name collision
+			-- "uid" is a Calendar property name — use evtUID to avoid collision
 			set evtUID to ""
 			try
 				set evtUID to uid of evt
@@ -131,9 +136,6 @@ func buildCreateScript(e *models.Event) string {
 		calName = "Calendar"
 	}
 
-	startUnix := e.StartTime.Unix()
-	endUnix := e.EndTime.Unix()
-
 	locationLine := ""
 	if e.Location != "" {
 		locationLine = fmt.Sprintf(`set location of newEvent to "%s"`, escapeAppleScript(e.Location))
@@ -147,11 +149,14 @@ func buildCreateScript(e *models.Event) string {
 		allDayLine = "set allday event of newEvent to true"
 	}
 
+	// Build ISO strings for start/end in local time — AppleScript reads them back correctly.
+	startISO := e.StartTime.Format("2006-01-02T15:04:05")
+	endISO := e.EndTime.Format("2006-01-02T15:04:05")
+
 	return fmt.Sprintf(`
--- Locale-independent date construction via second offsets
-set nowUnix to (do shell script "date '+%%s'") as integer
-set startDate to (current date) + (%d - nowUnix)
-set endDate   to (current date) + (%d - nowUnix)
+-- Parse ISO date strings via shell into AppleScript date objects (locale-independent).
+set startDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
+set endDate   to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
 
 tell application "Calendar"
 	tell calendar "%s"
@@ -162,7 +167,7 @@ tell application "Calendar"
 	end tell
 	reload calendars
 end tell
-`, startUnix, endUnix, escapeAppleScript(calName), escapeAppleScript(e.Title),
+`, startISO, endISO, escapeAppleScript(calName), escapeAppleScript(e.Title),
 		locationLine, notesLine, allDayLine)
 }
 
@@ -196,14 +201,14 @@ func parseEvents(raw string) []models.Event {
 			case "TITLE":
 				e.Title = val
 			case "START":
-				// AppleScript formats numbers with locale decimal separator.
-				// German macOS uses comma: "1,782659481E+9" → replace with period.
-				if f, err := strconv.ParseFloat(strings.ReplaceAll(val, ",", "."), 64); err == nil {
-					e.StartTime = time.Unix(int64(f), 0).Local()
+				// AppleScript outputs local time as "YYYY-MM-DDTHH:MM:SS".
+				// Parse as local time to match exactly what Apple Calendar shows.
+				if t, err := time.ParseInLocation("2006-01-02T15:04:05", val, time.Local); err == nil {
+					e.StartTime = t
 				}
 			case "END":
-				if f, err := strconv.ParseFloat(strings.ReplaceAll(val, ",", "."), 64); err == nil {
-					e.EndTime = time.Unix(int64(f), 0).Local()
+				if t, err := time.ParseInLocation("2006-01-02T15:04:05", val, time.Local); err == nil {
+					e.EndTime = t
 				}
 			case "CAL":
 				e.Calendar = val
