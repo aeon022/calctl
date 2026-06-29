@@ -182,14 +182,13 @@ type row struct {
 }
 
 func New() Model {
-	m := Model{
+	return Model{
 		daysAhead: 7,
 		loading:   true,
 	}
-	m.inputs = newFormInputs()
-	return m
 }
 
+// newFormInputs returns fresh text inputs. Call focusInput(0) separately to get the blink cmd.
 func newFormInputs() [fCount]textinput.Model {
 	var inputs [fCount]textinput.Model
 	for i := range inputs {
@@ -198,9 +197,7 @@ func newFormInputs() [fCount]textinput.Model {
 		t.CharLimit = 120
 		inputs[i] = t
 	}
-	// pre-fill date to today
 	inputs[fDate].SetValue(time.Now().Format("2006-01-02"))
-	inputs[fTitle].Focus()
 	return inputs
 }
 
@@ -297,25 +294,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc":
 			m.view = viewList
-			m.inputs = newFormInputs()
 			m.inputIdx = 0
+			return m, nil
 		case "tab", "down":
 			m.inputs[m.inputIdx].Blur()
 			m.inputIdx = (m.inputIdx + 1) % fCount
-			m.inputs[m.inputIdx].Focus()
+			return m, m.inputs[m.inputIdx].Focus()
 		case "shift+tab", "up":
 			m.inputs[m.inputIdx].Blur()
 			m.inputIdx = (m.inputIdx - 1 + fCount) % fCount
-			m.inputs[m.inputIdx].Focus()
+			return m, m.inputs[m.inputIdx].Focus()
 		case "enter":
 			if m.inputIdx < fCount-1 {
-				// move to next field unless on last
 				m.inputs[m.inputIdx].Blur()
 				m.inputIdx++
-				m.inputs[m.inputIdx].Focus()
-			} else {
-				return m.submitCreate()
+				return m, m.inputs[m.inputIdx].Focus()
 			}
+			return m.submitCreate()
 		case "ctrl+s":
 			return m.submitCreate()
 		}
@@ -359,6 +354,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = viewCreate
 		m.inputs = newFormInputs()
 		m.inputIdx = 0
+		return m, m.inputs[fTitle].Focus()
 
 	case "d":
 		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
