@@ -167,10 +167,11 @@ type Model struct {
 	height       int
 	daysAhead    int
 	weekOffset   int
-	// create form
+	// create / edit form
 	inputs       [fCount]textinput.Model
 	inputIdx     int
 	submitting   bool
+	editTarget   *models.Event // non-nil when editing existing event
 	// delete
 	deleteTarget *models.Event
 }
@@ -239,7 +240,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err = nil
 			m.view = viewList
-			m.inputs = newFormInputs()
+			m.editTarget = nil
 			return m, loadEvents(m.weekOffset, m.daysAhead)
 		}
 
@@ -353,8 +354,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		m.view = viewCreate
 		m.inputs = newFormInputs()
+		m.editTarget = nil
 		m.inputIdx = 0
 		return m, m.inputs[fTitle].Focus()
+
+	case "e":
+		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
+			e := m.rows[m.cursor].event
+			if e != nil && e.Title != "" && e.Title != "(no events)" {
+				m.view = viewCreate
+				m.inputs = prefillForm(e)
+				m.editTarget = e
+				m.inputIdx = 0
+				return m, m.inputs[fTitle].Focus()
+			}
+		}
 
 	case "d":
 		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
@@ -404,7 +418,7 @@ func (m Model) submitCreate() (Model, tea.Cmd) {
 	}
 	m.submitting = true
 	m.err = nil
-	return m, createEventCmd(m.inputs)
+	return m, createEventCmd(m.inputs, m.editTarget)
 }
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -528,8 +542,12 @@ func (m Model) renderCreate() string {
 	var b strings.Builder
 	b.WriteString("\n")
 
+	heading := "New Event"
+	if m.editTarget != nil {
+		heading = "Edit Event"
+	}
 	inner := strings.Builder{}
-	inner.WriteString(styleHeader.Render("New Event") + "\n\n")
+	inner.WriteString(styleHeader.Render(heading) + "\n\n")
 	for i, inp := range m.inputs {
 		label := formLabels[i]
 		labelStyle := styleFormLabel
@@ -637,6 +655,7 @@ func (m Model) renderStatusBar() string {
 			key("←→") + " week  " +
 			key("enter") + " detail  " +
 			key("n") + " new  " +
+			key("e") + " edit  " +
 			key("d") + " delete  " +
 			key("s") + " sync  " +
 			key("f") + " free  " +
@@ -707,7 +726,7 @@ func syncCmd(weekOffset, days int) tea.Cmd {
 	}
 }
 
-func createEventCmd(inputs [fCount]textinput.Model) tea.Cmd {
+func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) tea.Cmd {
 	return func() tea.Msg {
 		title := strings.TrimSpace(inputs[fTitle].Value())
 		dateStr := strings.TrimSpace(inputs[fDate].Value())
@@ -747,17 +766,48 @@ func createEventCmd(inputs [fCount]textinput.Model) tea.Cmd {
 			UpdatedAt: time.Now(),
 		}
 
+		s, err := store.New(config.DBPath())
+		if err != nil {
+			return eventCreatedMsg{err}
+		}
+		defer s.Close()
+		ctx := context.Background()
+
+		// edit = delete old + create new
+		if editTarget != nil {
+			_ = calendar.DeleteEvent(editTarget)
+			_ = s.DeleteByID(ctx, editTarget.ID)
+		}
+
 		if err := calendar.CreateEvent(e); err != nil {
 			return eventCreatedMsg{err}
 		}
-
-		s, err := store.New(config.DBPath())
-		if err == nil {
-			defer s.Close()
-			_ = s.UpsertEvent(context.Background(), e)
-		}
+		_ = s.UpsertEvent(ctx, e)
 		return eventCreatedMsg{}
 	}
+}
+
+// prefillForm creates a form pre-filled with an existing event's values.
+func prefillForm(e *models.Event) [fCount]textinput.Model {
+	inputs := newFormInputs()
+	inputs[fTitle].SetValue(e.Title)
+	inputs[fDate].SetValue(e.StartTime.Format("2006-01-02"))
+	if !e.AllDay {
+		inputs[fTime].SetValue(e.StartTime.Format("15:04"))
+		dur := e.EndTime.Sub(e.StartTime)
+		h := int(dur.Hours())
+		m := int(dur.Minutes()) % 60
+		if h > 0 && m > 0 {
+			inputs[fDuration].SetValue(fmt.Sprintf("%dh%dm", h, m))
+		} else if h > 0 {
+			inputs[fDuration].SetValue(fmt.Sprintf("%dh", h))
+		} else {
+			inputs[fDuration].SetValue(fmt.Sprintf("%dm", m))
+		}
+	}
+	inputs[fCalendar].SetValue(e.Calendar)
+	inputs[fLocation].SetValue(e.Location)
+	return inputs
 }
 
 func deleteEventCmd(e *models.Event) tea.Cmd {

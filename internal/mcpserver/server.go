@@ -29,6 +29,7 @@ func Serve() error {
 	s.AddTool(toolSync(), handleSync)
 	s.AddTool(toolFreeSlots(), handleFreeSlots)
 	s.AddTool(toolCreateEvent(), handleCreateEvent)
+	s.AddTool(toolDeleteEvent(), handleDeleteEvent)
 
 	return server.ServeStdio(s)
 }
@@ -113,6 +114,23 @@ func toolCreateEvent() mcp.Tool {
 		),
 		mcp.WithBoolean("all_day",
 			mcp.Description("Whether this is an all-day event"),
+		),
+	)
+}
+
+func toolDeleteEvent() mcp.Tool {
+	return mcp.NewTool("delete_event",
+		mcp.WithDescription("Delete a calendar event by title and date. Use list_events first to confirm the exact title and date."),
+		mcp.WithString("title",
+			mcp.Required(),
+			mcp.Description("Exact event title"),
+		),
+		mcp.WithString("date",
+			mcp.Required(),
+			mcp.Description("Event date in YYYY-MM-DD format"),
+		),
+		mcp.WithString("calendar",
+			mcp.Description("Calendar name — speeds up lookup"),
 		),
 	)
 }
@@ -278,6 +296,53 @@ func handleCreateEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		end.Format("15:04"),
 		calendarSuffix(e.Calendar),
 	)), nil
+}
+
+func handleDeleteEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	title := req.GetString("title", "")
+	dateStr := req.GetString("date", "")
+	calName := req.GetString("calendar", "")
+
+	if title == "" || dateStr == "" {
+		return mcp.NewToolResultError("title and date are required"), nil
+	}
+
+	date, err := parseDate(dateStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid date: " + err.Error()), nil
+	}
+
+	// find the event in cache to get its full data (start time, calendar)
+	s, err := store.New(config.DBPath())
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	defer s.Close()
+
+	from := startOfDay(date)
+	to := endOfDay(date)
+	events, err := s.ListEvents(context.Background(), from, to)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	var target *models.Event
+	for i := range events {
+		if events[i].Title == title && (calName == "" || events[i].Calendar == calName) {
+			target = &events[i]
+			break
+		}
+	}
+	if target == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("event %q on %s not found in cache — run sync first", title, dateStr)), nil
+	}
+
+	if err := calendar.DeleteEvent(target); err != nil {
+		return mcp.NewToolResultError("delete failed: " + err.Error()), nil
+	}
+	_ = s.DeleteByID(context.Background(), target.ID)
+
+	return mcp.NewToolResultText(fmt.Sprintf("Deleted: %s on %s", title, date.Format("Mon, Jan 02 2006"))), nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
