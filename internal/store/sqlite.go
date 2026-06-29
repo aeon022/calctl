@@ -90,6 +90,11 @@ func (s *Store) ListEvents(ctx context.Context, from, to time.Time) ([]models.Ev
 	return scanEvents(rows)
 }
 
+func (s *Store) DeleteByID(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE id = ?`, id)
+	return err
+}
+
 func (s *Store) DeleteBySource(ctx context.Context, source string, from, to time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		DELETE FROM events WHERE source = ? AND start_time >= ? AND start_time <= ?

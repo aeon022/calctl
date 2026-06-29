@@ -116,6 +116,29 @@ func CreateEvent(e *models.Event) error {
 	return err
 }
 
+// DeleteEvent removes an event from Apple Calendar by matching title + start time within its calendar.
+func DeleteEvent(e *models.Event) error {
+	calName := e.Calendar
+	if calName == "" {
+		calName = "Calendar"
+	}
+	startISO := e.StartTime.Format("2006-01-02T15:04:05")
+	script := fmt.Sprintf(`
+set nowUnix to (do shell script "date '+%%s'") as integer
+set targetDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - nowUnix)
+tell application "Calendar"
+	set theCal to first calendar whose name is "%s"
+	set evts to (every event of theCal whose summary = "%s" and start date = targetDate)
+	if (count of evts) > 0 then
+		delete first item of evts
+	end if
+	reload calendars
+end tell
+`, startISO, escapeAppleScript(calName), escapeAppleScript(e.Title))
+	_, err := runAppleScript(script)
+	return err
+}
+
 // ListCalendars returns all calendar names from Apple Calendar.
 func ListCalendars() ([]string, error) {
 	script := `
@@ -206,7 +229,8 @@ return output
 func buildCreateScript(e *models.Event) string {
 	calName := e.Calendar
 	if calName == "" {
-		calName = "Calendar"
+		// use first writable calendar rather than hardcoding "Calendar"
+		calName = firstWritableCalendar()
 	}
 
 	locationLine := ""
@@ -318,6 +342,20 @@ func runAppleScript(script string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func firstWritableCalendar() string {
+	script := `
+tell application "Calendar"
+	repeat with c in calendars
+		if writable of c then return name of c
+	end repeat
+end tell`
+	out, err := runAppleScript(script)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return "Calendar"
+	}
+	return strings.TrimSpace(out)
 }
 
 func escapeAppleScript(s string) string {

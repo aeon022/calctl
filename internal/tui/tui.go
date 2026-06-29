@@ -10,8 +10,10 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
 )
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -74,6 +76,25 @@ var (
 			Padding(1, 2).
 			Margin(1, 2)
 
+	styleFormLabel = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Width(12)
+
+	styleFormLabelActive = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("12")).
+				Bold(true).
+				Width(12)
+
+	styleFormBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("12")).
+			Padding(1, 2).
+			Margin(1, 2)
+
+	styleDeleteConfirm = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("9")).
+				Bold(true)
+
 	styleKWArrow = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("12")).
 			Bold(true)
@@ -95,12 +116,17 @@ var (
 			Foreground(lipgloss.Color("14"))
 )
 
-// ── Messages ─────────────────────────────────────────────────────────────────
+// ── Messages ──────────────────────────────────────────────────────────────────
 
 type eventsLoadedMsg struct{ events []models.Event }
 type syncDoneMsg struct {
 	events []models.Event
 	err    error
+}
+type eventCreatedMsg struct{ err error }
+type eventDeletedMsg struct {
+	id  string
+	err error
 }
 type errMsg struct{ err error }
 
@@ -112,20 +138,41 @@ const (
 	viewList view = iota
 	viewDetail
 	viewFree
+	viewCreate
 )
 
+// form field indices
+const (
+	fTitle = iota
+	fDate
+	fTime
+	fDuration
+	fCalendar
+	fLocation
+	fCount
+)
+
+var formLabels = [fCount]string{"Title", "Date", "Time", "Duration", "Calendar", "Location"}
+var formPlaceholders = [fCount]string{"Meeting mit Team", time.Now().Format("2006-01-02"), "09:00", "1h", config.Active.DefaultCalendar, "optional"}
+
 type Model struct {
-	events     []models.Event
-	rows       []row
-	cursor     int
-	view       view
-	loading    bool
-	syncing    bool
-	err        error
-	width      int
-	height     int
-	daysAhead  int
-	weekOffset int
+	events       []models.Event
+	rows         []row
+	cursor       int
+	view         view
+	loading      bool
+	syncing      bool
+	err          error
+	width        int
+	height       int
+	daysAhead    int
+	weekOffset   int
+	// create form
+	inputs       [fCount]textinput.Model
+	inputIdx     int
+	submitting   bool
+	// delete
+	deleteTarget *models.Event
 }
 
 type row struct {
@@ -135,10 +182,26 @@ type row struct {
 }
 
 func New() Model {
-	return Model{
+	m := Model{
 		daysAhead: 7,
 		loading:   true,
 	}
+	m.inputs = newFormInputs()
+	return m
+}
+
+func newFormInputs() [fCount]textinput.Model {
+	var inputs [fCount]textinput.Model
+	for i := range inputs {
+		t := textinput.New()
+		t.Placeholder = formPlaceholders[i]
+		t.CharLimit = 120
+		inputs[i] = t
+	}
+	// pre-fill date to today
+	inputs[fDate].SetValue(time.Now().Format("2006-01-02"))
+	inputs[fTitle].Focus()
+	return inputs
 }
 
 func (m Model) Init() tea.Cmd {
@@ -172,6 +235,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead)
 		}
 
+	case eventCreatedMsg:
+		m.submitting = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.err = nil
+			m.view = viewList
+			m.inputs = newFormInputs()
+			return m, loadEvents(m.weekOffset, m.daysAhead)
+		}
+
+	case eventDeletedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.err = nil
+			m.events = removeByID(m.events, msg.id)
+			m.rows = buildRows(m.events, m.weekOffset, m.daysAhead)
+			if m.cursor >= len(m.rows) {
+				m.cursor = max(0, len(m.rows)-1)
+			}
+		}
+		m.deleteTarget = nil
+
 	case errMsg:
 		m.loading = false
 		m.syncing = false
@@ -181,19 +268,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 
+	// forward key events to active text input in create view
+	if m.view == viewCreate {
+		var cmd tea.Cmd
+		m.inputs[m.inputIdx], cmd = m.inputs[m.inputIdx].Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.view {
-	case viewDetail:
+	// ── delete confirmation ───────────────────────────────────────────────────
+	if m.deleteTarget != nil {
 		switch msg.String() {
-		case "q", "esc", "backspace":
-			m.view = viewList
+		case "y", "Y":
+			target := m.deleteTarget
+			m.deleteTarget = nil
+			return m, deleteEventCmd(target)
+		default:
+			m.deleteTarget = nil
 		}
 		return m, nil
+	}
 
-	case viewFree:
+	// ── create form ───────────────────────────────────────────────────────────
+	if m.view == viewCreate {
+		switch msg.String() {
+		case "esc":
+			m.view = viewList
+			m.inputs = newFormInputs()
+			m.inputIdx = 0
+		case "tab", "down":
+			m.inputs[m.inputIdx].Blur()
+			m.inputIdx = (m.inputIdx + 1) % fCount
+			m.inputs[m.inputIdx].Focus()
+		case "shift+tab", "up":
+			m.inputs[m.inputIdx].Blur()
+			m.inputIdx = (m.inputIdx - 1 + fCount) % fCount
+			m.inputs[m.inputIdx].Focus()
+		case "enter":
+			if m.inputIdx < fCount-1 {
+				// move to next field unless on last
+				m.inputs[m.inputIdx].Blur()
+				m.inputIdx++
+				m.inputs[m.inputIdx].Focus()
+			} else {
+				return m.submitCreate()
+			}
+		case "ctrl+s":
+			return m.submitCreate()
+		}
+		var cmd tea.Cmd
+		m.inputs[m.inputIdx], cmd = m.inputs[m.inputIdx].Update(msg)
+		return m, cmd
+	}
+
+	// ── detail / free view ───────────────────────────────────────────────────
+	if m.view == viewDetail || m.view == viewFree {
 		switch msg.String() {
 		case "q", "esc", "backspace":
 			m.view = viewList
@@ -201,7 +333,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// viewList
+	// ── list view ─────────────────────────────────────────────────────────────
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -221,6 +353,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
 			m.view = viewDetail
+		}
+
+	case "n":
+		m.view = viewCreate
+		m.inputs = newFormInputs()
+		m.inputIdx = 0
+
+	case "d":
+		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
+			e := m.rows[m.cursor].event
+			if e != nil && e.Title != "" && e.Title != "(no events)" {
+				m.deleteTarget = e
+			}
 		}
 
 	case "s":
@@ -255,6 +400,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) submitCreate() (Model, tea.Cmd) {
+	title := strings.TrimSpace(m.inputs[fTitle].Value())
+	if title == "" {
+		m.err = fmt.Errorf("title is required")
+		return m, nil
+	}
+	m.submitting = true
+	m.err = nil
+	return m, createEventCmd(m.inputs)
+}
+
 // ── View ──────────────────────────────────────────────────────────────────────
 
 func (m Model) View() string {
@@ -263,13 +419,14 @@ func (m Model) View() string {
 	}
 
 	var b strings.Builder
-
 	b.WriteString(m.renderWeekNav())
 	b.WriteString("\n")
 	b.WriteString(m.renderHeader())
 	b.WriteString("\n")
 
 	switch m.view {
+	case viewCreate:
+		b.WriteString(m.renderCreate())
 	case viewDetail:
 		b.WriteString(m.renderDetail())
 	case viewFree:
@@ -286,7 +443,6 @@ func (m Model) renderWeekNav() string {
 	ws := weekStart(m.weekOffset)
 	today := startOfDay(time.Now())
 	_, kw := ws.ISOWeek()
-
 	eventDays := daysWithEvents(m.events)
 
 	var days []string
@@ -312,7 +468,9 @@ func (m Model) renderWeekNav() string {
 func (m Model) renderHeader() string {
 	left := styleHeader.Render("calctl") + "  " + time.Now().Format("Mon, Jan 02 2006")
 	right := ""
-	if m.syncing {
+	if m.submitting {
+		right = styleLoading.Render("saving…")
+	} else if m.syncing {
 		right = styleLoading.Render("syncing…")
 	} else if m.err != nil {
 		right = styleError.Render("⚠ " + m.err.Error())
@@ -367,7 +525,25 @@ func (m Model) renderList() string {
 	for i := used; i < contentHeight; i++ {
 		b.WriteString("\n")
 	}
+	return b.String()
+}
 
+func (m Model) renderCreate() string {
+	var b strings.Builder
+	b.WriteString("\n")
+
+	inner := strings.Builder{}
+	inner.WriteString(styleHeader.Render("New Event") + "\n\n")
+	for i, inp := range m.inputs {
+		label := formLabels[i]
+		labelStyle := styleFormLabel
+		if i == m.inputIdx {
+			labelStyle = styleFormLabelActive
+		}
+		inner.WriteString(labelStyle.Render(label) + "  " + inp.View() + "\n")
+	}
+
+	b.WriteString(styleFormBox.Render(inner.String()))
 	return b.String()
 }
 
@@ -402,7 +578,6 @@ func (m Model) renderDetail() string {
 	if e.Notes != "" {
 		b.WriteString("\n" + wordWrap(e.Notes, m.width-4) + "\n")
 	}
-
 	return styleDetail.Render(b.String())
 }
 
@@ -425,12 +600,10 @@ func (m Model) renderFree() string {
 
 	var b strings.Builder
 	b.WriteString("\n  " + styleHeader.Render("Free Slots") + "\n\n")
-
 	if len(slots) == 0 {
 		b.WriteString(styleEmpty.Render("  No free slots found.") + "\n")
 		return b.String()
 	}
-
 	var lastDate string
 	for _, sl := range slots {
 		if sl.Date != lastDate {
@@ -447,14 +620,28 @@ func (m Model) renderFree() string {
 }
 
 func (m Model) renderStatusBar() string {
+	if m.view == viewCreate {
+		return styleStatusBar.Render(
+			key("tab") + " next field  " +
+				key("enter") + " next / save  " +
+				key("ctrl+s") + " save  " +
+				key("esc") + " cancel",
+		)
+	}
 	if m.view == viewDetail || m.view == viewFree {
 		return styleStatusBar.Render(key("esc") + " back  " + key("q") + " quit")
 	}
-
+	if m.deleteTarget != nil {
+		return styleDeleteConfirm.Render(
+			fmt.Sprintf("  Delete %q?  ", m.deleteTarget.Title),
+		) + styleStatusBar.Render(key("y")+" confirm  "+key("any")+" cancel")
+	}
 	return styleStatusBar.Render(
 		key("↑↓") + " navigate  " +
 			key("←→") + " week  " +
 			key("enter") + " detail  " +
+			key("n") + " new  " +
+			key("d") + " delete  " +
 			key("s") + " sync  " +
 			key("f") + " free  " +
 			key("+/-") + fmt.Sprintf(" %dd", m.daysAhead) + "  " +
@@ -491,7 +678,6 @@ func loadEvents(weekOffset, days int) tea.Cmd {
 			return errMsg{err}
 		}
 		defer s.Close()
-
 		from := weekStart(weekOffset)
 		to := from.AddDate(0, 0, days)
 		events, err := s.ListEvents(context.Background(), from, to)
@@ -506,26 +692,89 @@ func syncCmd(weekOffset, days int) tea.Cmd {
 	return func() tea.Msg {
 		from := weekStart(weekOffset)
 		to := from.AddDate(0, 0, days)
-
 		events, err := calendar.FetchEvents(from, to)
 		if err != nil {
 			return syncDoneMsg{err: err}
 		}
-
 		s, err := store.New(config.DBPath())
 		if err != nil {
 			return syncDoneMsg{err: err}
 		}
 		defer s.Close()
-
 		ctx := context.Background()
 		_ = s.DeleteBySource(ctx, "apple", from, to)
 		for i := range events {
 			_ = s.UpsertEvent(ctx, &events[i])
 		}
-
 		stored, err := s.ListEvents(ctx, from, to)
 		return syncDoneMsg{events: stored, err: err}
+	}
+}
+
+func createEventCmd(inputs [fCount]textinput.Model) tea.Cmd {
+	return func() tea.Msg {
+		title := strings.TrimSpace(inputs[fTitle].Value())
+		dateStr := strings.TrimSpace(inputs[fDate].Value())
+		timeStr := strings.TrimSpace(inputs[fTime].Value())
+		durStr := strings.TrimSpace(inputs[fDuration].Value())
+		calName := strings.TrimSpace(inputs[fCalendar].Value())
+		loc := strings.TrimSpace(inputs[fLocation].Value())
+
+		if dateStr == "" {
+			dateStr = time.Now().Format("2006-01-02")
+		}
+		if timeStr == "" {
+			timeStr = "09:00"
+		}
+		if durStr == "" {
+			durStr = "1h"
+		}
+
+		start, err := time.ParseInLocation("2006-01-02 15:04", dateStr+" "+timeStr, time.Local)
+		if err != nil {
+			return eventCreatedMsg{fmt.Errorf("invalid date/time: %w", err)}
+		}
+		dur, err := parseDuration(durStr)
+		if err != nil {
+			return eventCreatedMsg{err}
+		}
+
+		e := &models.Event{
+			ID:        "calctl-" + uuid.New().String(),
+			Title:     title,
+			StartTime: start,
+			EndTime:   start.Add(dur),
+			Calendar:  calName,
+			Location:  loc,
+			Source:    "calctl",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+
+		if err := calendar.CreateEvent(e); err != nil {
+			return eventCreatedMsg{err}
+		}
+
+		s, err := store.New(config.DBPath())
+		if err == nil {
+			defer s.Close()
+			_ = s.UpsertEvent(context.Background(), e)
+		}
+		return eventCreatedMsg{}
+	}
+}
+
+func deleteEventCmd(e *models.Event) tea.Cmd {
+	return func() tea.Msg {
+		if err := calendar.DeleteEvent(e); err != nil {
+			return eventDeletedMsg{err: err}
+		}
+		s, err := store.New(config.DBPath())
+		if err == nil {
+			defer s.Close()
+			_ = s.DeleteByID(context.Background(), e.ID)
+		}
+		return eventDeletedMsg{id: e.ID}
 	}
 }
 
@@ -563,6 +812,43 @@ func buildRows(events []models.Event, weekOffset, daysAhead int) []row {
 		}
 	}
 	return rows
+}
+
+func removeByID(events []models.Event, id string) []models.Event {
+	out := events[:0]
+	for _, e := range events {
+		if e.ID != id {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// parseDuration parses "1h", "30min", "90m", "1h30m", "60" (bare number = minutes).
+func parseDuration(s string) (time.Duration, error) {
+	if s == "" {
+		return 60 * time.Minute, nil
+	}
+	s2 := strings.ToLower(strings.TrimSpace(s))
+	// bare number → minutes
+	if d, err := fmt.Sscanf(s2, "%d", new(int)); d == 1 && err == nil {
+		var n int
+		fmt.Sscanf(s2, "%d", &n)
+		return time.Duration(n) * time.Minute, nil
+	}
+	// "Xmin"
+	if strings.HasSuffix(s2, "min") {
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSuffix(s2, "min"), "%d", &n); err == nil {
+			return time.Duration(n) * time.Minute, nil
+		}
+	}
+	// Go duration ("1h", "30m", "1h30m")
+	d, err := time.ParseDuration(s2)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q (use 1h, 30min, 1h30m, 90)", s)
+	}
+	return d, nil
 }
 
 func weekStart(offset int) time.Time {
