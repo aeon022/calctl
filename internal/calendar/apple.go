@@ -117,29 +117,42 @@ func CreateEvent(e *models.Event) error {
 }
 
 // DeleteEvent removes an event from Apple Calendar by matching title + start time within its calendar.
+// It searches across all accounts so non-iCloud calendars are found correctly.
 func DeleteEvent(e *models.Event) error {
 	calName := e.Calendar
 	if calName == "" {
 		calName = "Calendar"
 	}
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
+	escapedCal := escapeAppleScript(calName)
+	escapedTitle := escapeAppleScript(e.Title)
+
 	script := fmt.Sprintf(`
 set nowUnix to (do shell script "date '+%%s'") as integer
 set targetDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - nowUnix)
 tell application "Calendar"
-	set theCal to first calendar whose name is "%s"
-	set evts to (every event of theCal whose summary = "%s" and start date = targetDate)
-	if (count of evts) > 0 then
-		delete first item of evts
+	set foundCal to missing value
+	repeat with c in calendars
+		if name of c is "%s" then
+			set foundCal to c
+			exit repeat
+		end if
+	end repeat
+	if foundCal is not missing value then
+		set evts to (every event of foundCal whose summary = "%s" and start date = targetDate)
+		if (count of evts) > 0 then
+			delete first item of evts
+		end if
 	end if
 	reload calendars
 end tell
-`, startISO, escapeAppleScript(calName), escapeAppleScript(e.Title))
+`, startISO, escapedCal, escapedTitle)
 	_, err := runAppleScript(script)
 	return err
 }
 
-// ListCalendars returns all calendar names from Apple Calendar.
+// ListCalendars returns all calendar names from Apple Calendar, deduplicated.
+// calendar "calendars" in Calendar.app already spans all accounts.
 func ListCalendars() ([]string, error) {
 	script := `
 tell application "Calendar"
@@ -153,10 +166,12 @@ end tell`
 	if err != nil {
 		return nil, err
 	}
+	seen := make(map[string]bool)
 	var cals []string
 	for _, name := range strings.Split(out, ", ") {
 		name = strings.TrimSpace(name)
-		if name != "" {
+		if name != "" && !seen[name] {
+			seen[name] = true
 			cals = append(cals, name)
 		}
 	}
@@ -248,13 +263,28 @@ func buildCreateScript(e *models.Event) string {
 
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
 	endISO := e.EndTime.Format("2006-01-02T15:04:05")
+	escapedCal := escapeAppleScript(calName)
+	escapedTitle := escapeAppleScript(e.Title)
 
+	// Search all calendars (which spans all accounts in Calendar.app) by name.
+	// "tell calendar NAME" only resolves iCloud calendars reliably on some macOS
+	// versions; iterating calendars finds Exchange/Google/other account calendars too.
 	return fmt.Sprintf(`
 set startDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
 set endDate   to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
 
 tell application "Calendar"
-	tell calendar "%s"
+	set foundCal to missing value
+	repeat with c in calendars
+		if name of c is "%s" then
+			set foundCal to c
+			exit repeat
+		end if
+	end repeat
+	if foundCal is missing value then
+		error "Calendar not found: %s"
+	end if
+	tell foundCal
 		set newEvent to make new event with properties {summary:"%s", start date:startDate, end date:endDate}
 		%s
 		%s
@@ -262,7 +292,7 @@ tell application "Calendar"
 	end tell
 	reload calendars
 end tell
-`, startISO, endISO, escapeAppleScript(calName), escapeAppleScript(e.Title),
+`, startISO, endISO, escapedCal, escapedCal, escapedTitle,
 		locationLine, notesLine, allDayLine)
 }
 

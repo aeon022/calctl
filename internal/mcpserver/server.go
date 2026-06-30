@@ -11,6 +11,7 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -273,7 +274,9 @@ func handleCreateEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		return mcp.NewToolResultError("invalid end time (use YYYY-MM-DDTHH:MM:SS): " + err.Error()), nil
 	}
 
+	now := time.Now()
 	e := &models.Event{
+		ID:        "calctl-" + uuid.New().String(),
 		Title:     title,
 		StartTime: start,
 		EndTime:   end,
@@ -282,10 +285,18 @@ func handleCreateEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		Notes:     req.GetString("notes", ""),
 		AllDay:    req.GetBool("all_day", false),
 		Source:    "calctl",
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	if err := calendar.CreateEvent(e); err != nil {
 		return mcp.NewToolResultError("create failed: " + err.Error()), nil
+	}
+
+	// Cache in SQLite so subsequent list_events calls show it immediately.
+	if s, err := store.New(config.DBPath()); err == nil {
+		defer s.Close()
+		_ = s.UpsertEvent(context.Background(), e)
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf(

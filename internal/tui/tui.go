@@ -153,7 +153,6 @@ const (
 )
 
 var formLabels = [fCount]string{"Title", "Date", "Time", "Duration", "Calendar", "Location"}
-var formPlaceholders = [fCount]string{"Meeting mit Team", time.Now().Format("2006-01-02"), "09:00", "1h", config.Active.DefaultCalendar, "optional"}
 
 type Model struct {
 	events       []models.Event
@@ -190,11 +189,21 @@ func New() Model {
 }
 
 // newFormInputs returns fresh text inputs. Call focusInput(0) separately to get the blink cmd.
+// Placeholders that depend on runtime config (e.g. DefaultCalendar) are set here, not at
+// package-init time, because config.Load() hasn't run yet during package initialization.
 func newFormInputs() [fCount]textinput.Model {
 	var inputs [fCount]textinput.Model
+	placeholders := [fCount]string{
+		"Meeting mit Team",
+		time.Now().Format("2006-01-02"),
+		"09:00",
+		"1h",
+		config.Active.DefaultCalendar, // safe here: config.Load() runs before any command
+		"optional",
+	}
 	for i := range inputs {
 		t := textinput.New()
-		t.Placeholder = formPlaceholders[i]
+		t.Placeholder = placeholders[i]
 		t.CharLimit = 120
 		inputs[i] = t
 	}
@@ -219,8 +228,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.events = msg.events
 		m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead)
-		if m.cursor >= len(m.rows) {
+		if m.cursor < 0 || m.cursor >= len(m.rows) {
 			m.cursor = 0
+		}
+		// Advance past the leading header row so the cursor starts on an event.
+		if len(m.rows) > 0 && m.rows[m.cursor].isHeader {
+			for i := m.cursor + 1; i < len(m.rows); i++ {
+				if !m.rows[i].isHeader {
+					m.cursor = i
+					break
+				}
+			}
 		}
 
 	case syncDoneMsg:
@@ -231,6 +249,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			m.events = msg.events
 			m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead)
+			if m.cursor < 0 || m.cursor >= len(m.rows) {
+				m.cursor = 0
+			}
 		}
 
 	case eventCreatedMsg:
@@ -335,20 +356,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "up", "k":
-		m.cursor = max(0, m.cursor-1)
-		for m.cursor > 0 && m.rows[m.cursor].isHeader {
-			m.cursor--
+		if len(m.rows) == 0 {
+			break
+		}
+		// walk backwards to the previous non-header row
+		prev := m.cursor - 1
+		for prev > 0 && m.rows[prev].isHeader {
+			prev--
+		}
+		if prev >= 0 && !m.rows[prev].isHeader {
+			m.cursor = prev
 		}
 
 	case "down", "j":
-		m.cursor = min(len(m.rows)-1, m.cursor+1)
-		for m.cursor < len(m.rows)-1 && m.rows[m.cursor].isHeader {
-			m.cursor++
+		if len(m.rows) == 0 {
+			break
+		}
+		// walk forwards to the next non-header row
+		next := m.cursor + 1
+		for next < len(m.rows) && m.rows[next].isHeader {
+			next++
+		}
+		if next < len(m.rows) {
+			m.cursor = next
 		}
 
 	case "enter":
 		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
-			m.view = viewDetail
+			e := m.rows[m.cursor].event
+			if e != nil && e.Title != "" && e.Title != "(no events)" {
+				m.view = viewDetail
+			}
 		}
 
 	case "n":
