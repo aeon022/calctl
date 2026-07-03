@@ -19,101 +19,104 @@ import (
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 var (
+	colorBlue   = lipgloss.AdaptiveColor{Light: "25",  Dark: "33"}
+	colorGreen  = lipgloss.AdaptiveColor{Light: "28",  Dark: "42"}
+	colorRed    = lipgloss.AdaptiveColor{Light: "160", Dark: "203"}
+	colorAmber  = lipgloss.AdaptiveColor{Light: "214", Dark: "220"}
+	colorMuted  = lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
+	colorSubtle = lipgloss.AdaptiveColor{Light: "250", Dark: "239"}
+	colorCyan   = lipgloss.AdaptiveColor{Light: "30",  Dark: "43"}
+
 	styleHeader = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("12")).
-			Padding(0, 1)
+			Foreground(colorBlue)
 
 	styleDateBanner = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("6"))
+			Foreground(colorCyan)
 
 	styleDivider = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240"))
+			Foreground(colorSubtle)
 
 	styleTime = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("11")).
+			Foreground(colorAmber).
 			Width(16)
 
-	styleTitle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15"))
+	styleTitle = lipgloss.NewStyle()
 
 	styleTitleSelected = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("0")).
-				Background(lipgloss.Color("12"))
+				Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "255"}).
+				Background(lipgloss.AdaptiveColor{Light: "189", Dark: "17"})
 
 	styleCal = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8"))
+			Foreground(colorMuted)
 
 	styleAllDay = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")).
+			Foreground(colorGreen).
 			Width(16)
 
 	styleEmpty = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
+			Foreground(colorSubtle).
 			Italic(true)
 
 	styleStatusBar = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Padding(0, 1)
+			Foreground(colorMuted)
 
 	styleStatusKey = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("12")).
+			Foreground(colorBlue).
 			Bold(true)
 
 	styleError = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("9")).
-			Padding(0, 1)
+			Foreground(colorRed)
 
 	styleLoading = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("11")).
-			Padding(0, 1)
+			Foreground(colorAmber)
 
 	styleDetail = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("12")).
+			BorderForeground(colorBlue).
 			Padding(1, 2).
 			Margin(1, 2)
 
 	styleFormLabel = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8")).
+			Foreground(colorMuted).
 			Width(12)
 
 	styleFormLabelActive = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("12")).
+				Foreground(colorBlue).
 				Bold(true).
 				Width(12)
 
 	styleFormBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("12")).
+			BorderForeground(colorBlue).
 			Padding(1, 2).
 			Margin(1, 2)
 
 	styleDeleteConfirm = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("9")).
+				Foreground(colorRed).
 				Bold(true)
 
 	styleKWArrow = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("12")).
+			Foreground(colorBlue).
 			Bold(true)
 
 	styleKWLabel = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8")).
+			Foreground(colorMuted).
 			Bold(true)
 
 	styleKWDay = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240"))
+			Foreground(colorSubtle)
 
 	styleKWDayToday = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("0")).
-			Background(lipgloss.Color("12")).
+			Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "255"}).
+			Background(colorBlue).
 			Bold(true).
 			Padding(0, 1)
 
 	styleKWDayEvent = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("14"))
+			Foreground(colorCyan)
 )
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -282,6 +285,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.syncing = false
 		m.err = msg.err
+
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if len(m.rows) > 0 {
+				prev := m.cursor - 1
+				for prev > 0 && m.rows[prev].isHeader {
+					prev--
+				}
+				if prev >= 0 && !m.rows[prev].isHeader {
+					m.cursor = prev
+				}
+			}
+		case tea.MouseButtonWheelDown:
+			if len(m.rows) > 0 {
+				next := m.cursor + 1
+				for next < len(m.rows) && m.rows[next].isHeader {
+					next++
+				}
+				if next < len(m.rows) {
+					m.cursor = next
+				}
+			}
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -1036,7 +1064,7 @@ func min(a, b int) int {
 
 // Run starts the TUI.
 func Run() error {
-	p := tea.NewProgram(New(), tea.WithAltScreen())
+	p := tea.NewProgram(New(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
