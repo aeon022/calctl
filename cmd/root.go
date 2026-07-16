@@ -15,8 +15,9 @@ var Version = "dev"
 var formatFlag string
 
 var rootCmd = &cobra.Command{
-	Use:   "calctl",
-	Short: "Calendar management from the terminal",
+	Use:     "calctl",
+	Version: Version,
+	Short:   "Calendar management from the terminal",
 	Long:  "calctl reads and writes Apple Calendar (and Google Calendar) from the command line.\nDesigned for AI-assisted scheduling via MCP or shell pipelines.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		return config.Load()

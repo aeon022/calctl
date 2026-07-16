@@ -20,3 +20,4 @@ google_token.json
 .idea/
 .vscode/
 *.swp
+dist/
