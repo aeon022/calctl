@@ -43,6 +43,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://github.com/aeon022/calctl
+    license: MIT
     description: "Calendar management from your terminal - local-first CLI/TUI for Apple Calendar"
     install: |
       bin.install "calctl"
