@@ -10,6 +10,7 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -142,6 +143,7 @@ const (
 	viewDetail
 	viewFree
 	viewCreate
+	viewHelp
 )
 
 // form field indices
@@ -164,6 +166,7 @@ type Model struct {
 	view         view
 	loading      bool
 	syncing      bool
+	sp           spinner.Model
 	err          error
 	width        int
 	height       int
@@ -176,6 +179,10 @@ type Model struct {
 	editTarget   *models.Event // non-nil when editing existing event
 	// delete
 	deleteTarget *models.Event
+	// search / filter
+	searching   bool
+	searchInput textinput.Model
+	searchQ     string
 }
 
 type row struct {
@@ -185,9 +192,18 @@ type row struct {
 }
 
 func New() Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+	sp.Style = styleLoading
+
+	si := textinput.New()
+	si.Placeholder = "filter events…"
+	si.CharLimit = 100
 	return Model{
-		daysAhead: 7,
-		loading:   true,
+		daysAhead:   7,
+		loading:     true,
+		searchInput: si,
+		sp:          sp,
 	}
 }
 
@@ -230,7 +246,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventsLoadedMsg:
 		m.loading = false
 		m.events = msg.events
-		m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead)
+		m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead, m.searchQ)
 		if m.cursor < 0 || m.cursor >= len(m.rows) {
 			m.cursor = 0
 		}
@@ -251,7 +267,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err = nil
 			m.events = msg.events
-			m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead)
+			m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead, m.searchQ)
 			if m.cursor < 0 || m.cursor >= len(m.rows) {
 				m.cursor = 0
 			}
@@ -274,7 +290,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err = nil
 			m.events = removeByID(m.events, msg.id)
-			m.rows = buildRows(m.events, m.weekOffset, m.daysAhead)
+			m.rows = buildRows(m.events, m.weekOffset, m.daysAhead, m.searchQ)
 			if m.cursor >= len(m.rows) {
 				m.cursor = max(0, len(m.rows)-1)
 			}
@@ -311,6 +327,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case spinner.TickMsg:
+		if m.syncing || m.submitting {
+			var cmd tea.Cmd
+			m.sp, cmd = m.sp.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -326,6 +350,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// ── help overlay ──────────────────────────────────────────────────────────
+	if m.view == viewHelp {
+		switch msg.String() {
+		case "q", "esc", "?":
+			m.view = viewList
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+
+	// ── search input ──────────────────────────────────────────────────────────
+	if m.searching {
+		switch msg.String() {
+		case "enter":
+			m.searchQ = strings.TrimSpace(m.searchInput.Value())
+			m.searching = false
+			m.rows = buildRows(m.events, m.weekOffset, m.daysAhead, m.searchQ)
+			m.cursor = 0
+			m.advanceCursorPastHeader()
+		case "esc":
+			m.searching = false
+			m.searchInput.SetValue("")
+			m.searchQ = ""
+			m.rows = buildRows(m.events, m.weekOffset, m.daysAhead, "")
+			m.cursor = 0
+			m.advanceCursorPastHeader()
+		case "ctrl+c":
+			return m, tea.Quit
+		default:
+			var cmd tea.Cmd
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			// live filtering while typing
+			m.searchQ = strings.TrimSpace(m.searchInput.Value())
+			m.rows = buildRows(m.events, m.weekOffset, m.daysAhead, m.searchQ)
+			m.cursor = 0
+			m.advanceCursorPastHeader()
+			return m, cmd
+		}
+		return m, nil
+	}
+
 	// ── delete confirmation ───────────────────────────────────────────────────
 	if m.deleteTarget != nil {
 		switch msg.String() {
@@ -382,6 +448,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+
+	case "esc":
+		if m.searchQ != "" {
+			m.searchQ = ""
+			m.searchInput.SetValue("")
+			m.rows = buildRows(m.events, m.weekOffset, m.daysAhead, "")
+			m.cursor = 0
+			m.advanceCursorPastHeader()
+		}
 
 	case "up", "k":
 		if len(m.rows) == 0 {
@@ -448,19 +523,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.syncing {
 			m.syncing = true
 			m.err = nil
-			return m, syncCmd(m.weekOffset, m.daysAhead)
+			return m, tea.Batch(syncCmd(m.weekOffset, m.daysAhead), m.sp.Tick)
 		}
 
 	case "f":
 		m.view = viewFree
 
+	case "/":
+		m.searching = true
+		m.searchInput.SetValue("")
+		return m, m.searchInput.Focus()
+
+	case "?":
+		m.view = viewHelp
+
 	case "+", "]":
 		m.daysAhead = min(m.daysAhead+7, 90)
-		m.rows = buildRows(m.events, m.weekOffset, m.daysAhead)
+		m.rows = buildRows(m.events, m.weekOffset, m.daysAhead, m.searchQ)
 
 	case "-", "[":
 		m.daysAhead = max(m.daysAhead-7, 7)
-		m.rows = buildRows(m.events, m.weekOffset, m.daysAhead)
+		m.rows = buildRows(m.events, m.weekOffset, m.daysAhead, m.searchQ)
 
 	case "left", "h":
 		m.weekOffset--
@@ -484,7 +567,7 @@ func (m Model) submitCreate() (Model, tea.Cmd) {
 	}
 	m.submitting = true
 	m.err = nil
-	return m, createEventCmd(m.inputs, m.editTarget)
+	return m, tea.Batch(createEventCmd(m.inputs, m.editTarget), m.sp.Tick)
 }
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -507,6 +590,8 @@ func (m Model) View() string {
 		b.WriteString(m.renderDetail())
 	case viewFree:
 		b.WriteString(m.renderFree())
+	case viewHelp:
+		b.WriteString(m.renderHelp())
 	default:
 		b.WriteString(m.renderList())
 	}
@@ -545,9 +630,9 @@ func (m Model) renderHeader() string {
 	left := styleHeader.Render("calctl") + "  " + time.Now().Format("Mon, Jan 02 2006")
 	right := ""
 	if m.submitting {
-		right = styleLoading.Render("saving…")
+		right = m.sp.View() + styleLoading.Render(" saving…")
 	} else if m.syncing {
-		right = styleLoading.Render("syncing…")
+		right = m.sp.View() + styleLoading.Render(" syncing…")
 	} else if m.err != nil {
 		right = styleError.Render("⚠ " + m.err.Error())
 	}
@@ -567,6 +652,13 @@ func (m Model) renderList() string {
 	b.WriteString("\n")
 
 	contentHeight := m.height - 6
+	if m.searching {
+		b.WriteString("  / " + m.searchInput.View() + "\n\n")
+		contentHeight -= 2
+	} else if m.searchQ != "" {
+		b.WriteString("  " + styleCal.Render("filter: /"+m.searchQ+"  (esc to clear)") + "\n\n")
+		contentHeight -= 2
+	}
 	visibleRows := m.visibleRows(contentHeight)
 
 	for _, r := range visibleRows {
@@ -723,9 +815,11 @@ func (m Model) renderStatusBar() string {
 			key("n") + " new  " +
 			key("e") + " edit  " +
 			key("d") + " delete  " +
+			key("/") + " filter  " +
 			key("s") + " sync  " +
 			key("f") + " free  " +
 			key("+/-") + fmt.Sprintf(" %dd", m.daysAhead) + "  " +
+			key("?") + " help  " +
 			key("q") + " quit",
 	)
 }
@@ -748,6 +842,49 @@ func (m Model) visibleRows(height int) []row {
 		end = start + height
 	}
 	return m.rows[start:end]
+}
+
+// advanceCursorPastHeader moves the cursor onto the first event row.
+func (m *Model) advanceCursorPastHeader() {
+	if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
+		return
+	}
+	for i := m.cursor + 1; i < len(m.rows); i++ {
+		if !m.rows[i].isHeader {
+			m.cursor = i
+			return
+		}
+	}
+}
+
+func (m Model) renderHelp() string {
+	row := func(k, desc string) string {
+		return "  " + styleStatusKey.Render(fmt.Sprintf("%-9s", k)) + styleStatusBar.Render(desc) + "\n"
+	}
+	section := func(t string) string { return "\n  " + styleHeader.Render(t) + "\n" }
+
+	var b strings.Builder
+	b.WriteString("\n  " + styleHeader.Render("calctl") + styleStatusBar.Render(" — calendar from the terminal") + "\n")
+	b.WriteString(section("Navigation"))
+	b.WriteString(row("j / ↓", "next event"))
+	b.WriteString(row("k / ↑", "previous event"))
+	b.WriteString(row("h / ←", "previous week"))
+	b.WriteString(row("l / →", "next week"))
+	b.WriteString(row("+ / -", "show more / fewer days (7–90)"))
+	b.WriteString(section("Events"))
+	b.WriteString(row("enter", "event detail"))
+	b.WriteString(row("n", "new event"))
+	b.WriteString(row("e", "edit event"))
+	b.WriteString(row("d", "delete event (asks to confirm)"))
+	b.WriteString(section("Views & Data"))
+	b.WriteString(row("/", "filter events (title, location, calendar, notes)"))
+	b.WriteString(row("esc", "clear active filter"))
+	b.WriteString(row("f", "free slots"))
+	b.WriteString(row("s", "sync from Apple Calendar"))
+	b.WriteString(section("Other"))
+	b.WriteString(row("?", "toggle this help"))
+	b.WriteString(row("q", "quit"))
+	return styleDetail.Render(b.String())
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -892,9 +1029,10 @@ func deleteEventCmd(e *models.Event) tea.Cmd {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func buildRows(events []models.Event, weekOffset, daysAhead int) []row {
+func buildRows(events []models.Event, weekOffset, daysAhead int, query string) []row {
 	from := weekStart(weekOffset)
 	today := startOfDay(time.Now())
+	q := strings.ToLower(strings.TrimSpace(query))
 	var rows []row
 
 	for d := 0; d < daysAhead; d++ {
@@ -903,9 +1041,18 @@ func buildRows(events []models.Event, weekOffset, daysAhead int) []row {
 
 		var dayEvents []models.Event
 		for _, e := range events {
-			if !e.StartTime.Before(day) && !e.StartTime.After(dayEnd) {
-				dayEvents = append(dayEvents, e)
+			if e.StartTime.Before(day) || e.StartTime.After(dayEnd) {
+				continue
 			}
+			if q != "" && !eventMatches(&e, q) {
+				continue
+			}
+			dayEvents = append(dayEvents, e)
+		}
+
+		// while filtering, hide days without matches instead of stacking empty headers
+		if q != "" && len(dayEvents) == 0 {
+			continue
 		}
 
 		label := day.Format("Mon, Jan 02")
@@ -924,6 +1071,13 @@ func buildRows(events []models.Event, weekOffset, daysAhead int) []row {
 		}
 	}
 	return rows
+}
+
+func eventMatches(e *models.Event, q string) bool {
+	return strings.Contains(strings.ToLower(e.Title), q) ||
+		strings.Contains(strings.ToLower(e.Location), q) ||
+		strings.Contains(strings.ToLower(e.Calendar), q) ||
+		strings.Contains(strings.ToLower(e.Notes), q)
 }
 
 func removeByID(events []models.Event, id string) []models.Event {
