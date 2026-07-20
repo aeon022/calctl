@@ -689,6 +689,15 @@ func (m Model) renderList() string {
 		b.WriteString("  " + timeStr + " " + titleStyle.Render(" "+truncate(e.Title, m.width-30)+" ") + calLabel + "\n")
 	}
 
+	if len(visibleRows) == 0 {
+		switch {
+		case m.searchQ != "":
+			b.WriteString("  " + styleCal.Render("No events match your search.") + "\n")
+		case len(m.rows) == 0:
+			b.WriteString("  " + styleCal.Render("No events yet — press s to sync from Apple Calendar, or calctl import to add one.") + "\n")
+		}
+	}
+
 	used := strings.Count(b.String(), "\n")
 	for i := used; i < contentHeight; i++ {
 		b.WriteString("\n")
