@@ -10,9 +10,11 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/theme"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
@@ -185,6 +187,11 @@ type Model struct {
 	searching   bool
 	searchInput textinput.Model
 	searchQ     string
+
+	// "?" transient help popup
+	helpVP   viewport.Model
+	helpPopW int
+	helpPopH int
 }
 
 type row struct {
@@ -357,10 +364,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "esc", "?":
 			m.view = viewList
+			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
 		}
-		return m, nil
+		var cmd tea.Cmd
+		m.helpVP, cmd = m.helpVP.Update(msg)
+		return m, cmd
 	}
 
 	// ── search input ──────────────────────────────────────────────────────────
@@ -537,7 +547,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.searchInput.Focus()
 
 	case "?":
-		m.view = viewHelp
+		m = m.openHelp()
 
 	case "+", "]":
 		m.daysAhead = min(m.daysAhead+7, 90)
@@ -574,11 +584,11 @@ func (m Model) submitCreate() (Model, tea.Cmd) {
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
-func (m Model) View() string {
-	if m.width == 0 {
-		return "Loading..."
-	}
-
+// assembleFrame wraps content with the header/week-nav/divider/status-bar
+// frame every view shares — factored out so the help overlay's background
+// can be built from the list content specifically (m.renderList()),
+// regardless of which m.view is actually active.
+func (m Model) assembleFrame(content string) string {
 	var b strings.Builder
 	b.WriteString(m.renderHeader())
 	b.WriteString("\n")
@@ -586,22 +596,32 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(styleDivider.Render(strings.Repeat("─", m.width)))
 	b.WriteString("\n")
+	b.WriteString(content)
+	b.WriteString(m.renderStatusBar())
+	return b.String()
+}
+
+func (m Model) View() string {
+	if m.width == 0 {
+		return "Loading..."
+	}
 
 	switch m.view {
 	case viewCreate:
-		b.WriteString(m.renderCreate())
+		return m.assembleFrame(m.renderCreate())
 	case viewDetail:
-		b.WriteString(m.renderDetail())
+		return m.assembleFrame(m.renderDetail())
 	case viewFree:
-		b.WriteString(m.renderFree())
+		return m.assembleFrame(m.renderFree())
 	case viewHelp:
-		b.WriteString(m.renderHelp())
+		// "?" is only reachable from the main list, so the list is always
+		// the correct background to keep visible behind the popup. No
+		// enclosing border around the whole frame, so inset 0 is safe.
+		bg := m.assembleFrame(m.renderList())
+		return overlay.Center(bg, m.renderHelpPopup(), m.width, m.height, 0)
 	default:
-		b.WriteString(m.renderList())
+		return m.assembleFrame(m.renderList())
 	}
-
-	b.WriteString(m.renderStatusBar())
-	return b.String()
 }
 
 func (m Model) renderWeekNav() string {
@@ -891,7 +911,7 @@ func (m *Model) advanceCursorPastHeader() {
 	}
 }
 
-func (m Model) renderHelp() string {
+func (m Model) helpContent() string {
 	row := func(k, desc string) string {
 		return "  " + styleStatusKey.Render(fmt.Sprintf("%-9s", k)) + styleStatusBar.Render(desc) + "\n"
 	}
@@ -917,7 +937,48 @@ func (m Model) renderHelp() string {
 	b.WriteString(section("Other"))
 	b.WriteString(row("?", "toggle this help"))
 	b.WriteString(row("q", "quit"))
-	return styleDetail.Render(b.String())
+	return b.String()
+}
+
+// openHelp sizes and populates the transient help popup (see
+// renderHelpPopup/overlay.Center) from the ACTUAL rendered background
+// height, not the terminal size.
+func (m Model) openHelp() Model {
+	bg := m.assembleFrame(m.renderList())
+	bgLines := strings.Split(bg, "\n")
+
+	safeH := max(6, len(bgLines))
+	popH := min(safeH, 22)
+	popW := min(70, m.width)
+	if popW < 40 {
+		popW = 40
+	}
+
+	vp := viewport.New(popW-6, popH-5) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
+	vp.SetContent(m.helpContent())
+
+	m.helpVP = vp
+	m.helpPopW = popW
+	m.helpPopH = popH
+	m.view = viewHelp
+	return m
+}
+
+// renderHelpPopup renders the help viewport in a bordered box, meant to be
+// composited over the list view via overlay.Center rather than replacing
+// the whole screen — the list stays visible around it.
+func (m Model) renderHelpPopup() string {
+	footer := "esc / ?  close"
+	if m.helpVP.TotalLineCount() > m.helpVP.Height {
+		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.helpVP.ScrollPercent()*100), footer)
+	}
+	body := m.helpVP.View() + "\n" + styleStatusBar.Render(footer)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorBlue).
+		Padding(1, 2).
+		Width(m.helpPopW).
+		Render(body)
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
