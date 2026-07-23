@@ -578,9 +578,9 @@ func (m Model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(m.renderWeekNav())
-	b.WriteString("\n")
 	b.WriteString(m.renderHeader())
+	b.WriteString("\n")
+	b.WriteString(m.renderWeekNav())
 	b.WriteString("\n")
 	b.WriteString(styleDivider.Render(strings.Repeat("─", m.width)))
 	b.WriteString("\n")
