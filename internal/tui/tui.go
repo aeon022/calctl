@@ -10,6 +10,7 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/aeon022/missionctl-core/theme"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,12 +21,13 @@ import (
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 var (
-	colorBlue   = lipgloss.AdaptiveColor{Light: "25",  Dark: "33"}
-	colorGreen  = lipgloss.AdaptiveColor{Light: "28",  Dark: "42"}
-	colorRed    = lipgloss.AdaptiveColor{Light: "160", Dark: "203"}
-	colorAmber  = lipgloss.AdaptiveColor{Light: "214", Dark: "220"}
-	colorMuted  = lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
-	colorSubtle = lipgloss.AdaptiveColor{Light: "250", Dark: "244"}
+	// Shared across the suite via missionctl-core/theme.
+	colorBlue   = theme.Blue
+	colorGreen  = theme.Green
+	colorRed    = theme.Red
+	colorAmber  = theme.Amber
+	colorMuted  = theme.Muted
+	colorSubtle = theme.Subtle
 	colorCyan   = lipgloss.AdaptiveColor{Light: "30",  Dark: "43"}
 
 	styleHeader = lipgloss.NewStyle().
@@ -47,8 +49,8 @@ var (
 
 	styleTitleSelected = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "255"}).
-				Background(lipgloss.AdaptiveColor{Light: "189", Dark: "17"})
+				Foreground(theme.SelectedFg).
+				Background(theme.SelectedBg)
 
 	styleCal = lipgloss.NewStyle().
 			Foreground(colorMuted)
@@ -111,7 +113,7 @@ var (
 			Foreground(colorSubtle)
 
 	styleKWDayToday = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "255"}).
+			Foreground(theme.SelectedFg).
 			Background(colorBlue).
 			Bold(true).
 			Padding(0, 1)
