@@ -233,7 +233,7 @@ func newFormInputs() [fCount]textinput.Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return loadEvents(0, 7)
+	return tea.Batch(loadEvents(0, 7), m.sp.Tick)
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case spinner.TickMsg:
-		if m.syncing || m.submitting {
+		if m.syncing || m.submitting || m.loading {
 			var cmd tea.Cmd
 			m.sp, cmd = m.sp.Update(msg)
 			return m, cmd
@@ -670,7 +670,7 @@ func (m Model) renderHeader() string {
 
 func (m Model) renderList() string {
 	if m.loading {
-		return styleLoading.Render("\n  Loading events…\n")
+		return "\n  " + m.sp.View() + styleLoading.Render(" Loading events…") + "\n"
 	}
 
 	var b strings.Builder
