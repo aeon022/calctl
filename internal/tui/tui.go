@@ -582,6 +582,8 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(m.renderHeader())
 	b.WriteString("\n")
+	b.WriteString(styleDivider.Render(strings.Repeat("─", m.width)))
+	b.WriteString("\n")
 
 	switch m.view {
 	case viewCreate:
@@ -626,8 +628,29 @@ func (m Model) renderWeekNav() string {
 		styleKWArrow.Render("▶")
 }
 
+// sectionLabel names the currently active view, shown in the header so
+// it's always clear which screen is on-screen — the header itself stays
+// in the same place and style across every view.
+func (m Model) sectionLabel() string {
+	switch m.view {
+	case viewCreate:
+		if m.editTarget != nil {
+			return "Edit Event"
+		}
+		return "New Event"
+	case viewDetail:
+		return "Event Detail"
+	case viewFree:
+		return "Free Slots"
+	case viewHelp:
+		return "Help"
+	default:
+		return "Events"
+	}
+}
+
 func (m Model) renderHeader() string {
-	left := styleHeader.Render("calctl") + "  " + time.Now().Format("Mon, Jan 02 2006")
+	left := styleHeader.Render("calctl") + styleStatusBar.Render(" · "+m.sectionLabel()) + "  " + time.Now().Format("Mon, Jan 02 2006")
 	right := ""
 	if m.submitting {
 		right = m.sp.View() + styleLoading.Render(" saving…")
@@ -873,7 +896,6 @@ func (m Model) renderHelp() string {
 	section := func(t string) string { return "\n  " + styleHeader.Render(t) + "\n" }
 
 	var b strings.Builder
-	b.WriteString("\n  " + styleHeader.Render("calctl") + styleStatusBar.Render(" — calendar from the terminal") + "\n")
 	b.WriteString(section("Navigation"))
 	b.WriteString(row("j / ↓", "next event"))
 	b.WriteString(row("k / ↑", "previous event"))
