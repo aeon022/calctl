@@ -25,7 +25,7 @@ var (
 	colorRed    = lipgloss.AdaptiveColor{Light: "160", Dark: "203"}
 	colorAmber  = lipgloss.AdaptiveColor{Light: "214", Dark: "220"}
 	colorMuted  = lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
-	colorSubtle = lipgloss.AdaptiveColor{Light: "250", Dark: "239"}
+	colorSubtle = lipgloss.AdaptiveColor{Light: "250", Dark: "244"}
 	colorCyan   = lipgloss.AdaptiveColor{Light: "30",  Dark: "43"}
 
 	styleHeader = lipgloss.NewStyle().
