@@ -29,26 +29,14 @@ else
 fi
 echo ""
 
-echo -e "${BLUE}[3/3] Building calctl...${NC}"
-if go build -o calctl .; then
-    echo -e "${GREEN}✔ calctl built successfully.${NC}"
+echo -e "${BLUE}[3/3] Building and installing calctl...${NC}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+mkdir -p "$INSTALL_DIR"
+if go build -o "$INSTALL_DIR/calctl" .; then
+    echo -e "${GREEN}✔ calctl installed to $INSTALL_DIR/calctl${NC}"
 else
     echo -e "${RED}Build failed.${NC}"
     exit 1
-fi
-echo ""
-
-echo -e "${BLUE}${BOLD}Global installation:${NC}"
-read -p "Copy calctl to /usr/local/bin? (y/n): " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    if sudo cp calctl /usr/local/bin/calctl; then
-        echo -e "${GREEN}✔ Installed globally. Run: calctl --help${NC}"
-    else
-        echo -e "${YELLOW}Run locally: ./calctl --help${NC}"
-    fi
-else
-    echo -e "${YELLOW}Run locally: ./calctl --help${NC}"
 fi
 
 echo ""
