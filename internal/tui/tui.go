@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
+	"github.com/sahilm/fuzzy"
 )
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ var (
 	colorAmber  = theme.Amber
 	colorMuted  = theme.Muted
 	colorSubtle = theme.Subtle
-	colorCyan   = lipgloss.AdaptiveColor{Light: "30",  Dark: "43"}
+	colorCyan   = lipgloss.AdaptiveColor{Light: "30", Dark: "43"}
 
 	styleHeader = lipgloss.NewStyle().
 			Bold(true).
@@ -164,23 +165,23 @@ const (
 var formLabels = [fCount]string{"Title", "Date", "Time", "Duration", "Calendar", "Location"}
 
 type Model struct {
-	events       []models.Event
-	rows         []row
-	cursor       int
-	view         view
-	loading      bool
-	syncing      bool
-	sp           spinner.Model
-	err          error
-	width        int
-	height       int
-	daysAhead    int
-	weekOffset   int
+	events     []models.Event
+	rows       []row
+	cursor     int
+	view       view
+	loading    bool
+	syncing    bool
+	sp         spinner.Model
+	err        error
+	width      int
+	height     int
+	daysAhead  int
+	weekOffset int
 	// create / edit form
-	inputs       [fCount]textinput.Model
-	inputIdx     int
-	submitting   bool
-	editTarget   *models.Event // non-nil when editing existing event
+	inputs     [fCount]textinput.Model
+	inputIdx   int
+	submitting bool
+	editTarget *models.Event // non-nil when editing existing event
 	// delete
 	deleteTarget *models.Event
 	// search / filter
@@ -731,7 +732,13 @@ func (m Model) renderList() string {
 			calLabel = styleCal.Render("  [" + e.Calendar + "]")
 		}
 
-		b.WriteString("  " + timeStr + " " + titleStyle.Render(" "+truncate(e.Title, m.width-30)+" ") + calLabel + "\n")
+		// Independently-rendered segments concatenated side by side, not
+		// nested inside one another — safe even though titleStyle carries a
+		// background when selected: each segment (leading space, per-
+		// character-highlighted title, trailing space) is self-contained.
+		matchIdx := fuzzyMatchIndexes(m.searchQ, e.Title)
+		titleRendered := titleStyle.Render(" ") + highlightMatches(truncate(e.Title, m.width-30), matchIdx, titleStyle) + titleStyle.Render(" ")
+		b.WriteString("  " + timeStr + " " + titleRendered + calLabel + "\n")
 	}
 
 	if len(visibleRows) == 0 {
@@ -1167,9 +1174,17 @@ func buildRows(events []models.Event, weekOffset, daysAhead int, query string) [
 	return rows
 }
 
+// eventMatches reports whether q matches e — a fuzzy (subsequence) match on
+// the title, or a plain substring match on location/calendar/notes for
+// events the title fuzzy-match missed. Used only to decide inclusion;
+// buildRows deliberately keeps events in their original day-grouped order
+// rather than re-ranking by match quality (re-sorting would scatter a
+// single day's events and fragment the "isHeader" day grouping).
 func eventMatches(e *models.Event, q string) bool {
-	return strings.Contains(strings.ToLower(e.Title), q) ||
-		strings.Contains(strings.ToLower(e.Location), q) ||
+	if q != "" && len(fuzzy.Find(q, []string{e.Title})) > 0 {
+		return true
+	}
+	return strings.Contains(strings.ToLower(e.Location), q) ||
 		strings.Contains(strings.ToLower(e.Calendar), q) ||
 		strings.Contains(strings.ToLower(e.Notes), q)
 }
@@ -1249,6 +1264,51 @@ func shortWeekday(t time.Time) string {
 		return s
 	}
 	return t.Format("Mo")
+}
+
+// fuzzyMatchIndexes returns the rune indexes within s that q fuzzy-matched,
+// or nil if q is empty or doesn't match at all.
+func fuzzyMatchIndexes(q, s string) []int {
+	if q == "" {
+		return nil
+	}
+	matches := fuzzy.Find(q, []string{s})
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches[0].MatchedIndexes
+}
+
+// highlightMatches renders s with the rune positions in idxs (from
+// fuzzyMatchIndexes) styled via a warm, underlined variant of base, and
+// every other character via base itself — fzf-style match highlighting.
+//
+// Renders one character at a time rather than nesting a highlighted span
+// inside a single outer Render() call: lipgloss's Render() ends every
+// string with a full SGR reset, so an inner Render() call's reset would
+// wipe out the outer style for everything after the first highlighted
+// character. Per-character rendering keeps every segment self-contained.
+//
+// idxs are indexes into s BEFORE any truncation — callers must resolve
+// indexes against the same, untruncated string used to compute them.
+func highlightMatches(s string, idxs []int, base lipgloss.Style) string {
+	if len(idxs) == 0 {
+		return base.Render(s)
+	}
+	hi := base.Foreground(colorAmber).Underline(true)
+	matchSet := make(map[int]bool, len(idxs))
+	for _, i := range idxs {
+		matchSet[i] = true
+	}
+	var b strings.Builder
+	for i, r := range []rune(s) {
+		if matchSet[i] {
+			b.WriteString(hi.Render(string(r)))
+		} else {
+			b.WriteString(base.Render(string(r)))
+		}
+	}
+	return b.String()
 }
 
 func truncate(s string, max int) string {
