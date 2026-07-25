@@ -334,6 +334,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = next
 				}
 			}
+		case tea.MouseButtonLeft:
+			if msg.Action != tea.MouseActionPress || m.view != viewList {
+				return m, nil
+			}
+			if i := m.rowHitTest(msg.Y); i >= 0 {
+				m.cursor = i
+			}
 		}
 		return m, nil
 
@@ -757,6 +764,38 @@ func (m Model) renderList() string {
 	return b.String()
 }
 
+// rowHitTest returns the m.rows index at screen row y, or -1 if the click
+// landed on a section header, blank line, or outside the list. Mirrors the
+// exact layout assembleFrame + renderList produce (header line, week nav
+// line, divider line, renderList's own leading blank, an optional 2-line
+// search/filter bar) plus visibleRows' scroll window, so a click lands on
+// the event it visually appears to be over.
+func (m Model) rowHitTest(y int) int {
+	row := 4
+	if m.searching || m.searchQ != "" {
+		row += 2
+	}
+	contentHeight := m.height - 6
+	if m.searching || m.searchQ != "" {
+		contentHeight -= 2
+	}
+	visible, start := m.visibleRowsWithStart(contentHeight)
+	for i, r := range visible {
+		if r.isHeader {
+			if y >= row && y < row+2 {
+				return -1
+			}
+			row += 2
+			continue
+		}
+		if y == row {
+			return start + i
+		}
+		row++
+	}
+	return -1
+}
+
 func (m Model) renderCreate() string {
 	var b strings.Builder
 	b.WriteString("\n")
@@ -886,8 +925,16 @@ func (m Model) renderStatusBar() string {
 }
 
 func (m Model) visibleRows(height int) []row {
+	rows, _ := m.visibleRowsWithStart(height)
+	return rows
+}
+
+// visibleRowsWithStart is visibleRows plus the scroll-window start index,
+// so callers that need to map a visible row back to its m.rows index
+// (rowHitTest) don't have to duplicate the windowing math.
+func (m Model) visibleRowsWithStart(height int) ([]row, int) {
 	if len(m.rows) == 0 {
-		return nil
+		return nil, 0
 	}
 	start := 0
 	end := len(m.rows)
@@ -902,7 +949,7 @@ func (m Model) visibleRows(height int) []row {
 		start = mid
 		end = start + height
 	}
-	return m.rows[start:end]
+	return m.rows[start:end], start
 }
 
 // advanceCursorPastHeader moves the cursor onto the first event row.
