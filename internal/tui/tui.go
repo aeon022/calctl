@@ -55,6 +55,8 @@ var (
 				Foreground(theme.SelectedFg).
 				Background(theme.SelectedBg)
 
+	styleTitleHover = theme.Hover
+
 	styleCal = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
@@ -168,6 +170,7 @@ type Model struct {
 	events     []models.Event
 	rows       []row
 	cursor     int
+	hoverRow   int // m.rows index under the mouse cursor, -1 when none
 	view       view
 	loading    bool
 	syncing    bool
@@ -214,6 +217,7 @@ func New() Model {
 		loading:     true,
 		searchInput: si,
 		sp:          sp,
+		hoverRow:    -1,
 	}
 }
 
@@ -340,6 +344,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if i := m.rowHitTest(msg.Y); i >= 0 {
 				m.cursor = i
+			}
+		case tea.MouseButtonNone:
+			if msg.Action == tea.MouseActionMotion && m.view == viewList {
+				m.hoverRow = m.rowHitTest(msg.Y)
 			}
 		}
 		return m, nil
@@ -723,6 +731,7 @@ func (m Model) renderList() string {
 
 		e := r.event
 		selected := m.rows[m.cursor] == r
+		hovered := !selected && m.hoverRow >= 0 && m.hoverRow < len(m.rows) && m.rows[m.hoverRow] == r
 
 		timeStr := styleTime.Render(e.StartTime.Format("15:04") + "–" + e.EndTime.Format("15:04"))
 		if e.AllDay {
@@ -730,8 +739,11 @@ func (m Model) renderList() string {
 		}
 
 		titleStyle := styleTitle
-		if selected {
+		switch {
+		case selected:
 			titleStyle = styleTitleSelected
+		case hovered:
+			titleStyle = styleTitleHover
 		}
 
 		calLabel := ""
@@ -1419,7 +1431,7 @@ func min(a, b int) int {
 
 // Run starts the TUI.
 func Run() error {
-	p := tea.NewProgram(New(), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(New(), tea.WithAltScreen(), tea.WithMouseAllMotion())
 	_, err := p.Run()
 	return err
 }
