@@ -95,6 +95,20 @@ func (s *Store) DeleteByID(ctx context.Context, id string) error {
 	return err
 }
 
+func (s *Store) ListBySource(ctx context.Context, source string, from, to time.Time) ([]models.Event, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, title, start_time, end_time, all_day, calendar, location, notes, attendees, source, external_id, created_at, updated_at
+		FROM events
+		WHERE source = ? AND start_time >= ? AND start_time <= ?
+		ORDER BY start_time ASC
+	`, source, from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEvents(rows)
+}
+
 func (s *Store) DeleteBySource(ctx context.Context, source string, from, to time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		DELETE FROM events WHERE source = ? AND start_time >= ? AND start_time <= ?

@@ -7,6 +7,7 @@ import (
 
 	"github.com/aeon022/calctl/internal/calendar"
 	"github.com/aeon022/calctl/internal/config"
+	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -49,6 +50,16 @@ var syncCmd = &cobra.Command{
 			}
 		}
 
+		// Reconcile local echoes: `calctl add` inserts a row immediately
+		// (source "calctl") AND creates the real event in Apple Calendar, so
+		// once that same event comes back through this sync as a fresh
+		// "apple"-sourced row, the echo is a stale duplicate — drop it.
+		if echoes, err := s.ListBySource(ctx, "calctl", from, to); err == nil {
+			for _, id := range staleEchoIDs(echoes, events) {
+				_ = s.DeleteByID(ctx, id)
+			}
+		}
+
 		if isJSON() {
 			outputJSON(map[string]any{
 				"ok":    true,
@@ -68,4 +79,21 @@ var syncCmd = &cobra.Command{
 func init() {
 	syncCmd.Flags().IntVar(&syncDays, "days", 30, "Number of days to sync ahead")
 	rootCmd.AddCommand(syncCmd)
+}
+
+// staleEchoIDs returns the IDs of local ("calctl"-sourced) echo rows whose
+// title and start time (exact instant) match one of the freshly-synced
+// Apple events — matched this way, not by ID, since AppleScript-created
+// events don't hand back their EventKit identifier at creation time.
+func staleEchoIDs(echoes, synced []models.Event) []string {
+	var ids []string
+	for _, echo := range echoes {
+		for _, ev := range synced {
+			if ev.Title == echo.Title && ev.StartTime.Equal(echo.StartTime) {
+				ids = append(ids, echo.ID)
+				break
+			}
+		}
+	}
+	return ids
 }
