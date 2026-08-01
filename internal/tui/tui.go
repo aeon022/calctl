@@ -179,7 +179,8 @@ type Model struct {
 	syncing    bool
 	sp         spinner.Model
 	err        error
-	status     string // confirmation text (e.g. "Copied to clipboard") — persists until overwritten, same convention m.err already follows here
+	status     string // confirmation text (e.g. "Copied to clipboard"), cleared 3s after statusTime on the next keypress — same lazy pattern budgetctl/mailctl/notectl use
+	statusTime time.Time
 	width      int
 	height     int
 	daysAhead  int
@@ -379,6 +380,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if time.Since(m.statusTime) > 3*time.Second {
+		m.status = ""
+	}
+
 	// ── help overlay ──────────────────────────────────────────────────────────
 	if m.view == viewHelp {
 		switch msg.String() {
@@ -579,6 +584,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			e := m.rows[m.cursor].event
 			if e != nil && e.Title != "" && e.Title != "(no events)" {
 				m.status = "Copied to clipboard"
+				m.statusTime = time.Now()
 				return m, copyToClipboardCmd(e.Title)
 			}
 		}
