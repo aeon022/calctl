@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -63,6 +64,8 @@ var (
 	styleAllDay = lipgloss.NewStyle().
 			Foreground(colorGreen).
 			Width(16)
+
+	styleOK = lipgloss.NewStyle().Foreground(colorGreen)
 
 	styleEmpty = lipgloss.NewStyle().
 			Foreground(colorSubtle).
@@ -176,6 +179,7 @@ type Model struct {
 	syncing    bool
 	sp         spinner.Model
 	err        error
+	status     string // confirmation text (e.g. "Copied to clipboard") — persists until overwritten, same convention m.err already follows here
 	width      int
 	height     int
 	daysAhead  int
@@ -570,6 +574,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "y":
+		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
+			e := m.rows[m.cursor].event
+			if e != nil && e.Title != "" && e.Title != "(no events)" {
+				m.status = "Copied to clipboard"
+				return m, copyToClipboardCmd(e.Title)
+			}
+		}
+
 	case "s":
 		if !m.syncing {
 			m.syncing = true
@@ -719,6 +732,8 @@ func (m Model) renderHeader() string {
 		right = m.sp.View() + styleLoading.Render(" syncing…")
 	} else if m.err != nil {
 		right = styleError.Render("⚠ " + m.err.Error())
+	} else if m.status != "" {
+		right = styleOK.Render("✓ " + m.status)
 	}
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
@@ -950,6 +965,7 @@ func (m Model) renderStatusBar() string {
 			key("n") + "new  " +
 			key("e") + "edit  " +
 			key("d") + "delete  " +
+			key("y") + "copy  " +
 			key("/") + "filter  " +
 			key("s") + "sync  " +
 			key("f") + "free  " +
@@ -1207,6 +1223,17 @@ func deleteEventCmd(e *models.Event) tea.Cmd {
 			_ = s.DeleteByID(context.Background(), e.ID)
 		}
 		return eventDeletedMsg{id: e.ID}
+	}
+}
+
+// copyToClipboardCmd shells out to pbcopy — same approach taskctl/mailctl/
+// notectl use for their own "y" copy shortcuts, no clipboard library needed.
+func copyToClipboardCmd(text string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("pbcopy")
+		cmd.Stdin = strings.NewReader(text)
+		_ = cmd.Run()
+		return nil
 	}
 }
 
