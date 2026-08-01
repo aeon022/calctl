@@ -78,3 +78,10 @@ func TokenPath() string {
 	dir, _ := os.UserConfigDir()
 	return filepath.Join(dir, "calctl", "google_token.json")
 }
+
+// LastSyncedPath is the marker file (see missionctl-core/lastsync) tracking
+// when a sync last completed, for the TUI's "synced Xh ago" header display.
+func LastSyncedPath() string {
+	dir, _ := os.UserConfigDir()
+	return filepath.Join(dir, "calctl", "last_synced")
+}
