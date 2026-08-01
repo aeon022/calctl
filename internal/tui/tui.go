@@ -167,24 +167,30 @@ const (
 	fCount
 )
 
+// doubleClickWindow opens the detail view on a second click within this
+// window, same pattern and duration taskctl uses for its own double-click.
+const doubleClickWindow = 400 * time.Millisecond
+
 var formLabels = [fCount]string{"Title", "Date", "Time", "Duration", "Calendar", "Location"}
 
 type Model struct {
-	events     []models.Event
-	rows       []row
-	cursor     int
-	hoverRow   int // m.rows index under the mouse cursor, -1 when none
-	view       view
-	loading    bool
-	syncing    bool
-	sp         spinner.Model
-	err        error
-	status     string // confirmation text (e.g. "Copied to clipboard"), cleared 3s after statusTime on the next keypress — same lazy pattern budgetctl/mailctl/notectl use
-	statusTime time.Time
-	width      int
-	height     int
-	daysAhead  int
-	weekOffset int
+	events       []models.Event
+	rows         []row
+	cursor       int
+	hoverRow     int // m.rows index under the mouse cursor, -1 when none
+	lastClickRow int // m.rows index of the previous left-click, -1 when none — double-click opens the detail view, same window/pattern taskctl uses
+	lastClickAt  time.Time
+	view         view
+	loading      bool
+	syncing      bool
+	sp           spinner.Model
+	err          error
+	status       string // confirmation text (e.g. "Copied to clipboard"), cleared 3s after statusTime on the next keypress — same lazy pattern budgetctl/mailctl/notectl use
+	statusTime   time.Time
+	width        int
+	height       int
+	daysAhead    int
+	weekOffset   int
 	// create / edit form
 	inputs     [fCount]textinput.Model
 	inputIdx   int
@@ -218,11 +224,12 @@ func New() Model {
 	si.Placeholder = "filter events…"
 	si.CharLimit = 100
 	return Model{
-		daysAhead:   7,
-		loading:     true,
-		searchInput: si,
-		sp:          sp,
-		hoverRow:    -1,
+		daysAhead:    7,
+		loading:      true,
+		searchInput:  si,
+		sp:           sp,
+		hoverRow:     -1,
+		lastClickRow: -1,
 	}
 }
 
@@ -348,7 +355,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if i := m.rowHitTest(msg.Y); i >= 0 {
+				now := time.Now()
+				if i == m.lastClickRow && now.Sub(m.lastClickAt) < doubleClickWindow {
+					m.cursor = i
+					m.lastClickRow = -1 // consumed, so a third click starts fresh
+					if e := m.rows[i].event; e != nil && e.Title != "" && e.Title != "(no events)" {
+						m.view = viewDetail
+					}
+					return m, nil
+				}
 				m.cursor = i
+				m.lastClickRow = i
+				m.lastClickAt = now
 			}
 		case tea.MouseButtonNone:
 			if msg.Action == tea.MouseActionMotion && m.view == viewList {
