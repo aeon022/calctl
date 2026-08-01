@@ -171,6 +171,10 @@ const (
 // window, same pattern and duration taskctl uses for its own double-click.
 const doubleClickWindow = 400 * time.Millisecond
 
+// undoWindow is how long after a delete "u" still restores it — same
+// duration taskctl uses for its own delete-undo.
+const undoWindow = 5 * time.Second
+
 var formLabels = [fCount]string{"Title", "Date", "Time", "Duration", "Calendar", "Location"}
 
 type Model struct {
@@ -198,6 +202,10 @@ type Model struct {
 	editTarget *models.Event // non-nil when editing existing event
 	// delete
 	deleteTarget *models.Event
+	// undo: "u" within undoWindow of a delete restores the deleted event —
+	// same pattern and window taskctl uses for its own delete-undo.
+	// statusTime doubles as its expiry clock (see handleKey).
+	lastDeleted *models.Event
 	// search / filter
 	searching   bool
 	searchInput textinput.Model
@@ -398,8 +406,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if time.Since(m.statusTime) > 3*time.Second {
+	// The delete-undo toast gets the longer undoWindow instead of the
+	// usual 3s — it's also the window "u" checks below, so the message
+	// and the capability it describes expire together.
+	clearAfter := 3 * time.Second
+	if m.lastDeleted != nil {
+		clearAfter = undoWindow
+	}
+	if time.Since(m.statusTime) > clearAfter {
 		m.status = ""
+		m.lastDeleted = nil
 	}
 
 	// ── help overlay ──────────────────────────────────────────────────────────
@@ -453,6 +469,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "y", "Y":
 			target := m.deleteTarget
 			m.deleteTarget = nil
+			m.lastDeleted = target
+			m.status = fmt.Sprintf("Deleted %q — press u to undo", target.Title)
+			m.statusTime = time.Now()
 			return m, deleteEventCmd(target)
 		default:
 			m.deleteTarget = nil
@@ -595,6 +614,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if e != nil && e.Title != "" && e.Title != "(no events)" {
 				m.deleteTarget = e
 			}
+		}
+
+	case "u":
+		if m.lastDeleted != nil {
+			e := m.lastDeleted
+			m.lastDeleted = nil
+			m.status = ""
+			return m, undoDeleteEventCmd(e)
 		}
 
 	case "y":
@@ -989,6 +1016,7 @@ func (m Model) renderStatusBar() string {
 			key("n") + "new  " +
 			key("e") + "edit  " +
 			key("d") + "delete  " +
+			key("u") + "undo  " +
 			key("y") + "copy  " +
 			key("/") + "filter  " +
 			key("s") + "sync  " +
@@ -1247,6 +1275,40 @@ func deleteEventCmd(e *models.Event) tea.Cmd {
 			_ = s.DeleteByID(context.Background(), e.ID)
 		}
 		return eventDeletedMsg{id: e.ID}
+	}
+}
+
+// undoDeleteEventCmd re-creates a deleted event — used by "u" within
+// undoWindow of a delete. Recreates in both Apple Calendar and the local
+// DB, same delete+recreate plumbing the edit flow already uses; the
+// restored event gets a fresh ID/source ("calctl") since Calendar.app
+// assigns its own new identifier on create, same tradeoff taskctl accepts
+// for its own delete-undo.
+func undoDeleteEventCmd(e *models.Event) tea.Cmd {
+	return func() tea.Msg {
+		restored := &models.Event{
+			ID:        "calctl-" + uuid.New().String(),
+			Title:     e.Title,
+			StartTime: e.StartTime,
+			EndTime:   e.EndTime,
+			AllDay:    e.AllDay,
+			Calendar:  e.Calendar,
+			Location:  e.Location,
+			Notes:     e.Notes,
+			Source:    "calctl",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := calendar.CreateEvent(restored); err != nil {
+			return eventCreatedMsg{err}
+		}
+		s, err := store.New(config.DBPath())
+		if err != nil {
+			return eventCreatedMsg{err}
+		}
+		defer s.Close()
+		_ = s.UpsertEvent(context.Background(), restored)
+		return eventCreatedMsg{}
 	}
 }
 
