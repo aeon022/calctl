@@ -906,33 +906,33 @@ func (m Model) renderFree() string {
 func (m Model) renderStatusBar() string {
 	if m.view == viewCreate {
 		return styleStatusBar.Render(
-			key("tab") + " next field  " +
-				key("enter") + " next / save  " +
-				key("ctrl+s") + " save  " +
-				key("esc") + " cancel",
+			key("tab") + "next field  " +
+				key("enter") + "next / save  " +
+				key("ctrl+s") + "save  " +
+				key("esc") + "cancel",
 		)
 	}
 	if m.view == viewDetail || m.view == viewFree {
-		return styleStatusBar.Render(key("esc") + " back  " + key("q") + " quit")
+		return styleStatusBar.Render(key("esc") + "back  " + key("q") + "quit")
 	}
 	if m.deleteTarget != nil {
 		return styleDeleteConfirm.Render(
 			fmt.Sprintf("  Delete %q?  ", m.deleteTarget.Title),
-		) + styleStatusBar.Render(key("y")+" confirm  "+key("any")+" cancel")
+		) + styleStatusBar.Render(key("y")+"confirm  "+key("any")+"cancel")
 	}
 	return styleStatusBar.Render(
-		key("↑↓") + " navigate  " +
-			key("←→") + " week  " +
-			key("enter") + " detail  " +
-			key("n") + " new  " +
-			key("e") + " edit  " +
-			key("d") + " delete  " +
-			key("/") + " filter  " +
-			key("s") + " sync  " +
-			key("f") + " free  " +
-			key("+/-") + fmt.Sprintf(" %dd", m.daysAhead) + "  " +
-			key("?") + " help  " +
-			key("q") + " quit",
+		key("↑↓") + "navigate  " +
+			key("←→") + "week  " +
+			key("enter") + "detail  " +
+			key("n") + "new  " +
+			key("e") + "edit  " +
+			key("d") + "delete  " +
+			key("/") + "filter  " +
+			key("s") + "sync  " +
+			key("f") + "free  " +
+			key("+/-") + fmt.Sprintf("%dd", m.daysAhead) + "  " +
+			key("?") + "help  " +
+			key("q") + "quit",
 	)
 }
 
@@ -1411,8 +1411,10 @@ func formatDur(d time.Duration) string {
 	return fmt.Sprintf("%dm", m)
 }
 
+// key renders a footer key-hint in the suite-wide "key:label" format —
+// callers append the label text (no leading space) right after this call.
 func key(k string) string {
-	return styleStatusKey.Render(k)
+	return styleStatusKey.Render(k + ":")
 }
 
 func max(a, b int) int {
