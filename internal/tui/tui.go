@@ -512,6 +512,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor = next
 		}
 
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		// jump to the nth visible (on-screen) event row, headers not
+		// counted — mirrors the same visibleRowsWithStart/contentHeight
+		// math rowHitTest uses, so a digit lands on the same row a click at
+		// that screen position would.
+		n := int(msg.String()[0] - '0')
+		contentHeight := m.height - 6
+		if m.searching || m.searchQ != "" {
+			contentHeight -= 2
+		}
+		visible, start := m.visibleRowsWithStart(contentHeight)
+		count := 0
+		for i, r := range visible {
+			if r.isHeader {
+				continue
+			}
+			count++
+			if count == n {
+				m.cursor = start + i
+				break
+			}
+		}
+
 	case "enter":
 		if m.cursor < len(m.rows) && !m.rows[m.cursor].isHeader {
 			e := m.rows[m.cursor].event
