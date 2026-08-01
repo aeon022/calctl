@@ -116,39 +116,42 @@ func CreateEvent(e *models.Event) error {
 	return err
 }
 
-// DeleteEvent removes an event from Apple Calendar by matching title + start time within its calendar.
-// It searches across all accounts so non-iCloud calendars are found correctly.
+// DeleteEvent removes an event from Apple Calendar by matching title + start
+// time, searching every calendar across all accounts rather than requiring
+// e.Calendar to exactly match an existing calendar name — a stored/derived
+// Calendar value ("" falling back to a guessed default, or one that's since
+// been renamed) previously meant the delete silently matched nothing and
+// left the real event behind untouched while the caller believed it had
+// succeeded. Returns an error if no matching event was found anywhere, so
+// callers can tell a real deletion from a silent no-op.
 func DeleteEvent(e *models.Event) error {
-	calName := e.Calendar
-	if calName == "" {
-		calName = "Calendar"
-	}
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
-	escapedCal := escapeAppleScript(calName)
 	escapedTitle := escapeAppleScript(e.Title)
 
 	script := fmt.Sprintf(`
 set nowUnix to (do shell script "date '+%%s'") as integer
 set targetDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - nowUnix)
+set deletedCount to 0
 tell application "Calendar"
-	set foundCal to missing value
 	repeat with c in calendars
-		if name of c is "%s" then
-			set foundCal to c
-			exit repeat
-		end if
+		set evts to (every event of c whose summary = "%s" and start date = targetDate)
+		repeat with e in evts
+			delete e
+			set deletedCount to deletedCount + 1
+		end repeat
 	end repeat
-	if foundCal is not missing value then
-		set evts to (every event of foundCal whose summary = "%s" and start date = targetDate)
-		if (count of evts) > 0 then
-			delete first item of evts
-		end if
-	end if
 	reload calendars
 end tell
-`, startISO, escapedCal, escapedTitle)
-	_, err := runAppleScript(script)
-	return err
+return deletedCount as string
+`, startISO, escapedTitle)
+	out, err := runAppleScript(script)
+	if err != nil {
+		return err
+	}
+	if out == "0" {
+		return fmt.Errorf("no matching event found in any calendar (title %q, start %s)", e.Title, startISO)
+	}
+	return nil
 }
 
 // ListCalendars returns all calendar names from Apple Calendar, deduplicated.
