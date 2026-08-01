@@ -23,14 +23,25 @@ var (
 	addLoc      string
 	addNotes    string
 	addAllDay   bool
+	addRepeat   string
+	addCount    int
+	addUntil    string
 )
 
 var addCmd = &cobra.Command{
 	Use:   "add <title>",
 	Short: "Quickly create a calendar event",
+	Long: `Quickly create a calendar event.
+
+Note on --repeat: Calendar.app's own AppleScript interface does not
+reliably support deleting recurring events afterward (confirmed by
+direct testing — see the KNOWN LIMITATION comment on DeleteEvent). If
+you need to remove a recurring event later, you may need to do it
+manually in Calendar.app.`,
 	Example: `  calctl add "Zahnarzt" --date 2026-07-05 --time 10:00 --duration 1h --cal Privat
   calctl add "Team Call" --date 2026-07-07 --time 14:00 --duration 30min --loc Zoom
-  calctl add "Urlaub" --date 2026-08-01 --all-day`,
+  calctl add "Urlaub" --date 2026-08-01 --all-day
+  calctl add "Standup" --date 2026-08-04 --time 09:00 --duration 15min --repeat weekly --count 10`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		title := args[0]
@@ -74,18 +85,24 @@ var addCmd = &cobra.Command{
 			calName = config.Active.DefaultCalendar
 		}
 
+		recurrence, err := buildRecurrenceRule(addRepeat, addCount, addUntil, loc)
+		if err != nil {
+			return err
+		}
+
 		e := &models.Event{
-			ID:        "calctl-" + uuid.New().String(),
-			Title:     title,
-			StartTime: start,
-			EndTime:   end,
-			Calendar:  calName,
-			Location:  addLoc,
-			Notes:     addNotes,
-			AllDay:    addAllDay,
-			Source:    "calctl",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			ID:         "calctl-" + uuid.New().String(),
+			Title:      title,
+			StartTime:  start,
+			EndTime:    end,
+			Calendar:   calName,
+			Location:   addLoc,
+			Notes:      addNotes,
+			AllDay:     addAllDay,
+			Recurrence: recurrence,
+			Source:     "calctl",
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
 		}
 
 		if err := calendar.CreateEvent(e); err != nil {
@@ -127,6 +144,42 @@ var addCmd = &cobra.Command{
 	},
 }
 
+// buildRecurrenceRule translates the friendly --repeat/--count/--until flags
+// into an iCalendar RRULE string (empty if --repeat wasn't given). --count
+// and --until are mutually exclusive, matching RRULE's own COUNT/UNTIL.
+func buildRecurrenceRule(repeat string, count int, until string, loc *time.Location) (string, error) {
+	if repeat == "" {
+		return "", nil
+	}
+	if count > 0 && until != "" {
+		return "", fmt.Errorf("--count and --until are mutually exclusive")
+	}
+	var freq string
+	switch strings.ToLower(repeat) {
+	case "daily":
+		freq = "DAILY"
+	case "weekly":
+		freq = "WEEKLY"
+	case "monthly":
+		freq = "MONTHLY"
+	case "yearly":
+		freq = "YEARLY"
+	default:
+		return "", fmt.Errorf("invalid --repeat %q (use daily, weekly, monthly, or yearly)", repeat)
+	}
+	rule := "FREQ=" + freq
+	if count > 0 {
+		rule += fmt.Sprintf(";COUNT=%d", count)
+	} else if until != "" {
+		untilDate, err := time.ParseInLocation("2006-01-02", until, loc)
+		if err != nil {
+			return "", fmt.Errorf("invalid --until %q (use YYYY-MM-DD)", until)
+		}
+		rule += ";UNTIL=" + untilDate.UTC().Format("20060102T150405Z")
+	}
+	return rule, nil
+}
+
 // parseDuration parses "1h", "30min", "90m", "1h30m", "60" (bare number = minutes).
 func parseDuration(s string) (time.Duration, error) {
 	if s == "" {
@@ -162,6 +215,9 @@ func init() {
 	addCmd.Flags().StringVar(&addLoc, "loc", "", "Location")
 	addCmd.Flags().StringVar(&addNotes, "notes", "", "Notes")
 	addCmd.Flags().BoolVar(&addAllDay, "all-day", false, "All-day event")
+	addCmd.Flags().StringVar(&addRepeat, "repeat", "", "Recurrence: daily, weekly, monthly, or yearly")
+	addCmd.Flags().IntVar(&addCount, "count", 0, "Number of occurrences (with --repeat; mutually exclusive with --until)")
+	addCmd.Flags().StringVar(&addUntil, "until", "", "Last occurrence date YYYY-MM-DD (with --repeat; mutually exclusive with --count)")
 
 	rootCmd.AddCommand(addCmd)
 }

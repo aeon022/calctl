@@ -124,6 +124,19 @@ func CreateEvent(e *models.Event) error {
 // left the real event behind untouched while the caller believed it had
 // succeeded. Returns an error if no matching event was found anywhere, so
 // callers can tell a real deletion from a silent no-op.
+//
+// KNOWN LIMITATION, confirmed by direct testing while adding recurring-event
+// support (models.Event.Recurrence): Calendar.app's AppleScript `delete`
+// command does not reliably remove a *recurring* event — reproduced with a
+// disposable test event (FREQ=DAILY;COUNT=2): `delete` returned success
+// (deletedCount > 0, no error) but the event was still present on every
+// re-query, including after quitting and relaunching Calendar.app, clearing
+// the event's recurrence property first, deleting by exact uid instead of a
+// whose-clause match, and a bulk `delete (every event whose ...)` — none of
+// it took effect. This is a Calendar.app/EventKit AppleScript-bridge
+// limitation, not something fixable from calctl's side. A recurring event
+// created via `calctl add --repeat` may need to be deleted manually in
+// Calendar.app if this function reports success but the event persists.
 func DeleteEvent(e *models.Event) error {
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
 	escapedTitle := escapeAppleScript(e.Title)
@@ -263,6 +276,10 @@ func buildCreateScript(e *models.Event) string {
 	if e.AllDay {
 		allDayLine = "set allday event of newEvent to true"
 	}
+	recurrenceLine := ""
+	if e.Recurrence != "" {
+		recurrenceLine = fmt.Sprintf(`set recurrence of newEvent to "%s"`, escapeAppleScript(e.Recurrence))
+	}
 
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
 	endISO := e.EndTime.Format("2006-01-02T15:04:05")
@@ -292,11 +309,12 @@ tell application "Calendar"
 		%s
 		%s
 		%s
+		%s
 	end tell
 	reload calendars
 end tell
 `, startISO, endISO, escapedCal, escapedCal, escapedTitle,
-		locationLine, notesLine, allDayLine)
+		locationLine, notesLine, allDayLine, recurrenceLine)
 }
 
 func parseEvents(raw string) []models.Event {
