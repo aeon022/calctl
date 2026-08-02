@@ -357,6 +357,18 @@ Events are read from Apple Calendar via AppleScript and cached locally in SQLite
 
 ---
 
+## Syncing across devices
+
+By default calctl's cache lives at `~/Library/Application Support/calctl/calctl.db`, local to this machine. To share it across devices, set `data_dir` (in `~/Library/Application Support/calctl/config.yaml`) or the `CALCTL_DATA_DIR` env var to a folder you already sync yourself — iCloud Drive, Dropbox, Syncthing, etc:
+
+```bash
+export CALCTL_DATA_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/calctl"
+```
+
+Once set, calctl automatically switches its SQLite journal mode from WAL to rollback-journal — WAL splits the database across multiple files that a folder-sync client can't update atomically together, so this switch keeps the directory down to a single consistent file whenever calctl isn't actively writing. A same-machine lock also prevents two calctl processes from opening the cache at once (run `calctl doctor` to see the current mode and path). This only protects against the same-machine and stale-snapshot failure modes, not two machines editing at the exact same instant; an undownloaded iCloud file is reported explicitly rather than as a bare error.
+
+---
+
 ## Requirements
 
 - macOS with Apple Calendar
