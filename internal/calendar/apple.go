@@ -52,7 +52,8 @@ store.requestFullAccessToEvents { granted, _ in
         let loc   = evt.location ?? ""
         let allday = evt.isAllDay ? "1" : "0"
         let uid   = evt.eventIdentifier ?? ""
-        print("TITLE:\(title)\nSTART:\(start)\nEND:\(end)\nCAL:\(cal.title)\nLOC:\(loc)\nALLDAY:\(allday)\nUID:\(uid)\n---EVENT---")
+        let tz    = evt.timeZone?.identifier ?? ""
+        print("TITLE:\(title)\nSTART:\(start)\nEND:\(end)\nCAL:\(cal.title)\nLOC:\(loc)\nALLDAY:\(allday)\nUID:\(uid)\nTZ:\(tz)\n---EVENT---")
     }
 }
 sema.wait()
@@ -381,6 +382,8 @@ func parseEvents(raw string) []models.Event {
 				if val != "" {
 					e.ID = "apple-" + val
 				}
+			case "TZ":
+				e.Timezone = val
 			}
 		}
 

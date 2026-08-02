@@ -139,7 +139,10 @@ type syncDoneMsg struct {
 	events []models.Event
 	err    error
 }
-type eventCreatedMsg struct{ err error }
+type eventCreatedMsg struct {
+	err     error
+	warning string // non-fatal, e.g. "conflicts with X" — event was still created
+}
 type eventDeletedMsg struct {
 	id  string
 	err error
@@ -369,6 +372,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			m.view = viewList
 			m.editTarget = nil
+			if msg.warning != "" {
+				m.status = msg.warning
+				m.statusTime = time.Now()
+			}
 			return m, loadEvents(m.weekOffset, m.daysAhead)
 		}
 
@@ -1035,6 +1042,14 @@ func (m Model) renderDetail() string {
 			formatDur(e.EndTime.Sub(e.StartTime)),
 		))
 	}
+	if e.Timezone != "" {
+		if loc, err := time.LoadLocation(e.Timezone); err == nil {
+			orig, local := e.StartTime.In(loc).Format("15:04"), e.StartTime.Local().Format("15:04")
+			if orig != local {
+				b.WriteString(fmt.Sprintf("  Timezone  %s (%s there, %s here)\n", e.Timezone, orig, local))
+			}
+		}
+	}
 	if e.Calendar != "" {
 		b.WriteString(fmt.Sprintf("  Calendar  %s\n", e.Calendar))
 	}
@@ -1331,11 +1346,11 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 
 		start, err := time.ParseInLocation("2006-01-02 15:04", dateStr+" "+timeStr, time.Local)
 		if err != nil {
-			return eventCreatedMsg{fmt.Errorf("invalid date/time: %w", err)}
+			return eventCreatedMsg{err: fmt.Errorf("invalid date/time: %w", err)}
 		}
 		dur, err := parseDuration(durStr)
 		if err != nil {
-			return eventCreatedMsg{err}
+			return eventCreatedMsg{err: err}
 		}
 
 		e := &models.Event{
@@ -1352,7 +1367,7 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 
 		s, err := store.New(config.DBPath())
 		if err != nil {
-			return eventCreatedMsg{err}
+			return eventCreatedMsg{err: err}
 		}
 		defer s.Close()
 		ctx := context.Background()
@@ -1363,11 +1378,23 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 			_ = s.DeleteByID(ctx, editTarget.ID)
 		}
 
+		warning := ""
+		dayStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+		if existing, cerr := s.ListEvents(ctx, dayStart, dayStart.Add(24*time.Hour)); cerr == nil {
+			if conflicts := models.FindConflicts(*e, existing); len(conflicts) > 0 {
+				names := make([]string, len(conflicts))
+				for i, c := range conflicts {
+					names[i] = c.Title
+				}
+				warning = "⚠ conflicts with " + strings.Join(names, ", ")
+			}
+		}
+
 		if err := calendar.CreateEvent(e); err != nil {
-			return eventCreatedMsg{err}
+			return eventCreatedMsg{err: err}
 		}
 		_ = s.UpsertEvent(ctx, e)
-		return eventCreatedMsg{}
+		return eventCreatedMsg{warning: warning}
 	}
 }
 
@@ -1430,11 +1457,11 @@ func undoDeleteEventCmd(e *models.Event) tea.Cmd {
 			UpdatedAt: time.Now(),
 		}
 		if err := calendar.CreateEvent(restored); err != nil {
-			return eventCreatedMsg{err}
+			return eventCreatedMsg{err: err}
 		}
 		s, err := store.New(config.DBPath())
 		if err != nil {
-			return eventCreatedMsg{err}
+			return eventCreatedMsg{err: err}
 		}
 		defer s.Close()
 		_ = s.UpsertEvent(context.Background(), restored)

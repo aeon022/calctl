@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -105,14 +106,30 @@ manually in Calendar.app.`,
 			UpdatedAt:  time.Now(),
 		}
 
+		s, err := store.New(config.DBPath())
+		if err == nil {
+			defer s.Close()
+			if !addAllDay {
+				dayStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, loc)
+				existing, cerr := s.ListEvents(context.Background(), dayStart, dayStart.Add(24*time.Hour))
+				if cerr == nil {
+					if conflicts := models.FindConflicts(*e, existing); len(conflicts) > 0 {
+						names := make([]string, len(conflicts))
+						for i, c := range conflicts {
+							names[i] = fmt.Sprintf("%q (%s–%s)", c.Title, c.StartTime.Format("15:04"), c.EndTime.Format("15:04"))
+						}
+						fmt.Fprintf(os.Stderr, "⚠ conflicts with: %s\n", strings.Join(names, ", "))
+					}
+				}
+			}
+		}
+
 		if err := calendar.CreateEvent(e); err != nil {
 			return fmt.Errorf("create event: %w", err)
 		}
 
 		// save to local cache
-		s, err := store.New(config.DBPath())
-		if err == nil {
-			defer s.Close()
+		if s != nil {
 			_ = s.UpsertEvent(context.Background(), e)
 		}
 

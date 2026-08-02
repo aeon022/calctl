@@ -14,6 +14,7 @@ type Event struct {
 	Notes      string    `json:"notes"       yaml:"notes"`
 	Attendees  []string  `json:"attendees"   yaml:"attendees"`
 	Recurrence string    `json:"recurrence"  yaml:"recurrence"` // iCalendar RRULE, e.g. "FREQ=WEEKLY;COUNT=10" — empty means no recurrence
+	Timezone   string    `json:"timezone"    yaml:"timezone"`   // IANA identifier the event was created in (e.g. "America/Los_Angeles"); "" for a floating/local-time event, or when synced via the AppleScript fallback which doesn't expose this
 	Source     string    `json:"source"      yaml:"source"`     // "apple" | "google"
 	ExternalID string    `json:"external_id" yaml:"external_id"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -23,6 +24,31 @@ type Event struct {
 // Duration returns the length of the event.
 func (e Event) Duration() time.Duration {
 	return e.EndTime.Sub(e.StartTime)
+}
+
+// Overlaps reports whether e and other occupy any of the same time — a
+// classic half-open interval overlap check ([start, end) vs [start, end)).
+// All-day events never conflict (they're not a real time-slot booking),
+// and an event never conflicts with itself (same ID).
+func (e Event) Overlaps(other Event) bool {
+	if e.ID != "" && e.ID == other.ID {
+		return false
+	}
+	if e.AllDay || other.AllDay {
+		return false
+	}
+	return e.StartTime.Before(other.EndTime) && other.StartTime.Before(e.EndTime)
+}
+
+// FindConflicts returns every event in existing that overlaps e.
+func FindConflicts(e Event, existing []Event) []Event {
+	var conflicts []Event
+	for _, other := range existing {
+		if e.Overlaps(other) {
+			conflicts = append(conflicts, other)
+		}
+	}
+	return conflicts
 }
 
 // FreeSlot represents a gap between events during working hours.

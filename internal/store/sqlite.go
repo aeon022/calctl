@@ -49,19 +49,26 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_events_start ON events(start_time);
 		CREATE INDEX IF NOT EXISTS idx_events_source ON events(source);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	// SQLite has no ADD COLUMN IF NOT EXISTS — ignore the error if it's
+	// already there from a previous run.
+	_, _ = s.db.Exec(`ALTER TABLE events ADD COLUMN timezone TEXT NOT NULL DEFAULT ''`)
+	return nil
 }
 
 func (s *Store) UpsertEvent(ctx context.Context, e *models.Event) error {
 	attendees, _ := json.Marshal(e.Attendees)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO events
-			(id, title, start_time, end_time, all_day, calendar, location, notes, attendees, source, external_id, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			(id, title, start_time, end_time, all_day, calendar, location, notes, attendees, source, external_id, created_at, updated_at, timezone)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			title=excluded.title, start_time=excluded.start_time, end_time=excluded.end_time,
 			all_day=excluded.all_day, calendar=excluded.calendar, location=excluded.location,
-			notes=excluded.notes, attendees=excluded.attendees, updated_at=excluded.updated_at
+			notes=excluded.notes, attendees=excluded.attendees, updated_at=excluded.updated_at,
+			timezone=excluded.timezone
 	`,
 		e.ID, e.Title,
 		e.StartTime.UTC().Format(time.RFC3339),
@@ -72,13 +79,14 @@ func (s *Store) UpsertEvent(ctx context.Context, e *models.Event) error {
 		e.Source, e.ExternalID,
 		e.CreatedAt.UTC().Format(time.RFC3339),
 		e.UpdatedAt.UTC().Format(time.RFC3339),
+		e.Timezone,
 	)
 	return err
 }
 
 func (s *Store) ListEvents(ctx context.Context, from, to time.Time) ([]models.Event, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, start_time, end_time, all_day, calendar, location, notes, attendees, source, external_id, created_at, updated_at
+		SELECT id, title, start_time, end_time, all_day, calendar, location, notes, attendees, source, external_id, created_at, updated_at, timezone
 		FROM events
 		WHERE start_time >= ? AND start_time <= ?
 		ORDER BY start_time ASC
@@ -97,7 +105,7 @@ func (s *Store) DeleteByID(ctx context.Context, id string) error {
 
 func (s *Store) ListBySource(ctx context.Context, source string, from, to time.Time) ([]models.Event, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, start_time, end_time, all_day, calendar, location, notes, attendees, source, external_id, created_at, updated_at
+		SELECT id, title, start_time, end_time, all_day, calendar, location, notes, attendees, source, external_id, created_at, updated_at, timezone
 		FROM events
 		WHERE source = ? AND start_time >= ? AND start_time <= ?
 		ORDER BY start_time ASC
@@ -127,7 +135,7 @@ func scanEvents(rows *sql.Rows) ([]models.Event, error) {
 		if err := rows.Scan(
 			&e.ID, &e.Title, &startStr, &endStr, &allDayInt,
 			&e.Calendar, &e.Location, &e.Notes, &attendeesJSON,
-			&e.Source, &e.ExternalID, &createdStr, &updatedStr,
+			&e.Source, &e.ExternalID, &createdStr, &updatedStr, &e.Timezone,
 		); err != nil {
 			return nil, err
 		}
