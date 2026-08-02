@@ -117,8 +117,12 @@ func TestBuildRows_PreservesDayGroupingRatherThanRankingByMatchQuality(t *testin
 	// re-sort by fuzzy match quality — events are grouped by day with
 	// interleaved header rows, and re-ranking would scatter a single
 	// day's events and fragment that grouping.
-	today := time.Now()
-	day1 := time.Date(today.Year(), today.Month(), today.Day(), 9, 0, 0, 0, today.Location())
+	// buildRows(events, 0, 7, ...) windows this-week Monday..Sunday (7 days
+	// from weekStart(0)) — anchor day1 to that Monday rather than "today",
+	// so day1/day2 both stay inside the window regardless of which real
+	// weekday the test happens to run on (using "today" broke every Sunday,
+	// since day2 = "tomorrow" would fall in the next Mon-Sun week).
+	day1 := weekStart(0).Add(9 * time.Hour)
 	day2 := day1.AddDate(0, 0, 1)
 	events := []models.Event{
 		{ID: "1", Title: "budgetctl release", StartTime: day1, EndTime: day1.Add(time.Hour)},
