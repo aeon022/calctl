@@ -110,7 +110,21 @@ func fetchViaEventKit(from, to time.Time) ([]models.Event, error) {
 }
 
 // CreateEvent creates a new event in Apple Calendar via AppleScript.
+//
+// Requires e.Calendar to be set — it used to silently fall back to
+// "whichever calendar Calendar.app happens to list first" (firstWritableCalendar,
+// removed) when no calendar was given anywhere (no --cal, no configured
+// default_calendar). That's genuinely dangerous on a account with shared
+// calendars: it landed a test event in a family calendar, notifying every
+// member, since "first writable" is an arbitrary property of account/list
+// ordering, not a deliberate choice. Every caller (cmd/add.go, the TUI
+// create form, the MCP server) already resolves --cal or
+// config.Active.DefaultCalendar before reaching here, so this only fires
+// when the user genuinely hasn't specified or configured one anywhere.
 func CreateEvent(e *models.Event) error {
+	if e.Calendar == "" {
+		return fmt.Errorf("no calendar specified — pass --cal <name>, or set default_calendar in the calctl config; run `calctl calendars` to see available names")
+	}
 	script := buildCreateScript(e)
 	_, err := runAppleScript(script)
 	return err
@@ -257,12 +271,10 @@ return output
 	return parseEvents(out), nil
 }
 
+// buildCreateScript assumes e.Calendar is already set — CreateEvent checks
+// that before calling this.
 func buildCreateScript(e *models.Event) string {
 	calName := e.Calendar
-	if calName == "" {
-		// use first writable calendar rather than hardcoding "Calendar"
-		calName = firstWritableCalendar()
-	}
 
 	locationLine := ""
 	if e.Location != "" {
@@ -393,20 +405,6 @@ func runAppleScript(script string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
-}
-
-func firstWritableCalendar() string {
-	script := `
-tell application "Calendar"
-	repeat with c in calendars
-		if writable of c then return name of c
-	end repeat
-end tell`
-	out, err := runAppleScript(script)
-	if err != nil || strings.TrimSpace(out) == "" {
-		return "Calendar"
-	}
-	return strings.TrimSpace(out)
 }
 
 func escapeAppleScript(s string) string {

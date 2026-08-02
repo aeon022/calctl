@@ -1206,6 +1206,9 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 		timeStr := strings.TrimSpace(inputs[fTime].Value())
 		durStr := strings.TrimSpace(inputs[fDuration].Value())
 		calName := strings.TrimSpace(inputs[fCalendar].Value())
+		if calName == "" {
+			calName = config.Active.DefaultCalendar
+		}
 		loc := strings.TrimSpace(inputs[fLocation].Value())
 
 		if dateStr == "" {
