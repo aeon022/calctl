@@ -156,6 +156,7 @@ const (
 	viewFree
 	viewCreate
 	viewHelp
+	viewCalendarPicker // "c" — pick and save the default calendar
 )
 
 // form field indices
@@ -218,6 +219,24 @@ type Model struct {
 	helpVP   viewport.Model
 	helpPopW int
 	helpPopH int
+
+	// "c" default-calendar picker
+	availableCalendars []string
+	calPickerCursor    int
+}
+
+type defaultCalendarSetMsg struct{ name string }
+
+type calendarsLoadedMsg struct {
+	names []string
+	err   error
+}
+
+func loadCalendarsCmd() tea.Cmd {
+	return func() tea.Msg {
+		names, err := calendar.ListCalendars()
+		return calendarsLoadedMsg{names: names, err: err}
+	}
 }
 
 type row struct {
@@ -308,6 +327,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case lastSyncedLoadedMsg:
 		m.lastSynced = msg.t
+
+	case calendarsLoadedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.availableCalendars = msg.names
+			// preselect the current default, if it's in the list
+			for i, n := range msg.names {
+				if n == config.Active.DefaultCalendar {
+					m.calPickerCursor = i
+					break
+				}
+			}
+		}
+
+	case defaultCalendarSetMsg:
+		m.status = "Default calendar: " + msg.name
+		m.statusTime = time.Now()
 
 	case syncDoneMsg:
 		m.syncing = false
@@ -447,6 +484,38 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.helpVP, cmd = m.helpVP.Update(msg)
 		return m, cmd
+	}
+
+	// ── calendar picker ("c" — set default calendar) ────────────────────────────
+	if m.view == viewCalendarPicker {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc", "q":
+			m.view = viewList
+			return m, nil
+		case "j", "down":
+			if m.calPickerCursor < len(m.availableCalendars)-1 {
+				m.calPickerCursor++
+			}
+		case "k", "up":
+			if m.calPickerCursor > 0 {
+				m.calPickerCursor--
+			}
+		case "enter":
+			if m.calPickerCursor < len(m.availableCalendars) {
+				name := m.availableCalendars[m.calPickerCursor]
+				m.view = viewList
+				return m, func() tea.Msg {
+					if err := config.SetDefaultCalendar(name); err != nil {
+						return errMsg{err}
+					}
+					return defaultCalendarSetMsg{name: name}
+				}
+			}
+			m.view = viewList
+		}
+		return m, nil
 	}
 
 	// ── search input ──────────────────────────────────────────────────────────
@@ -661,6 +730,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.view = viewFree
 
+	case "c":
+		m.calPickerCursor = 0
+		m.view = viewCalendarPicker
+		return m, loadCalendarsCmd()
+
 	case "/":
 		m.searching = true
 		m.searchInput.SetValue("")
@@ -739,6 +813,9 @@ func (m Model) View() string {
 		// enclosing border around the whole frame, so inset 0 is safe.
 		bg := m.assembleFrame(m.renderList())
 		return overlay.Center(bg, m.renderHelpPopup(), m.width, m.height, 0)
+	case viewCalendarPicker:
+		bg := m.assembleFrame(m.renderList())
+		return overlay.Center(bg, m.renderCalendarPicker(), m.width, m.height, 0)
 	default:
 		return m.assembleFrame(m.renderList())
 	}
@@ -1109,6 +1186,7 @@ func (m Model) helpContent() string {
 	b.WriteString(row("/", "filter events (title, location, calendar, notes)"))
 	b.WriteString(row("esc", "clear active filter"))
 	b.WriteString(row("f", "free slots"))
+	b.WriteString(row("c", "set default calendar for new events"))
 	b.WriteString(row("s", "sync from Apple Calendar"))
 	b.WriteString(section("Other"))
 	b.WriteString(row("?", "toggle this help"))
@@ -1155,6 +1233,36 @@ func (m Model) renderHelpPopup() string {
 		Padding(1, 2).
 		Width(m.helpPopW).
 		Render(body)
+}
+
+func (m Model) renderCalendarPicker() string {
+	var b strings.Builder
+	b.WriteString(styleHeader.Render("Default Calendar") + "\n")
+	b.WriteString(styleStatusBar.Render("New events use this calendar when --cal isn't given.") + "\n\n")
+
+	if m.availableCalendars == nil {
+		b.WriteString(styleStatusBar.Render("Loading…") + "\n")
+	} else if len(m.availableCalendars) == 0 {
+		b.WriteString(styleStatusBar.Render("No calendars found.") + "\n")
+	}
+	for i, name := range m.availableCalendars {
+		line := name
+		if name == config.Active.DefaultCalendar {
+			line += "  (current)"
+		}
+		if i == m.calPickerCursor {
+			b.WriteString(styleTitleSelected.Render("› "+line) + "\n")
+		} else {
+			b.WriteString("  " + line + "\n")
+		}
+	}
+	b.WriteString("\n" + styleStatusBar.Render("j/k move  enter set default  esc cancel"))
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorBlue).
+		Padding(1, 2).
+		Width(min(50, m.width-4)).
+		Render(b.String())
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────

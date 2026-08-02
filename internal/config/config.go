@@ -9,13 +9,13 @@ import (
 )
 
 type Config struct {
-	DefaultCalendar     string       `mapstructure:"default_calendar"`
-	WorkingHoursFrom    string       `mapstructure:"working_hours_from"`
-	WorkingHoursTo      string       `mapstructure:"working_hours_to"`
-	WorkingDays         []string     `mapstructure:"working_days"`
-	MinFreeSlot         int          `mapstructure:"min_free_slot_min"`
-	ExcludedCalendars   []string     `mapstructure:"excluded_calendars"`
-	Google              GoogleConfig `mapstructure:"google"`
+	DefaultCalendar   string       `mapstructure:"default_calendar"`
+	WorkingHoursFrom  string       `mapstructure:"working_hours_from"`
+	WorkingHoursTo    string       `mapstructure:"working_hours_to"`
+	WorkingDays       []string     `mapstructure:"working_days"`
+	MinFreeSlot       int          `mapstructure:"min_free_slot_min"`
+	ExcludedCalendars []string     `mapstructure:"excluded_calendars"`
+	Google            GoogleConfig `mapstructure:"google"`
 }
 
 type GoogleConfig struct {
@@ -84,4 +84,21 @@ func TokenPath() string {
 func LastSyncedPath() string {
 	dir, _ := os.UserConfigDir()
 	return filepath.Join(dir, "calctl", "last_synced")
+}
+
+// SetDefaultCalendar persists default_calendar to the config file and
+// updates Active in memory, so it takes effect immediately without a
+// restart. Used by the TUI's "c" calendar picker.
+func SetDefaultCalendar(name string) error {
+	viper.Set("default_calendar", name)
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return fmt.Errorf("config dir: %w", err)
+	}
+	path := filepath.Join(configDir, "calctl", "config.yaml")
+	if err := viper.WriteConfigAs(path); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	Active.DefaultCalendar = name
+	return nil
 }
