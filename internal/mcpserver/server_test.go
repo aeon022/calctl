@@ -29,7 +29,7 @@ func setupTestDB(t *testing.T) time.Time {
 	config.Active.WorkingHoursTo = "18:00"
 	config.Active.MinFreeSlot = 30
 
-	s, err := store.New(path)
+	s, err := store.New(path, false)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

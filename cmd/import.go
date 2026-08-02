@@ -61,7 +61,7 @@ Example frontmatter:
 		ctx := context.Background()
 		var s *store.Store
 		if !importDryRun {
-			s, err = store.New(config.DBPath())
+			s, err = store.New(config.DBPath(), config.Shared())
 			if err != nil {
 				return fmt.Errorf("open store: %w", err)
 			}

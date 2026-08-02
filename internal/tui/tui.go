@@ -1066,7 +1066,7 @@ func (m Model) renderDetail() string {
 }
 
 func (m Model) renderFree() string {
-	s, err := store.New(config.DBPath())
+	s, err := store.New(config.DBPath(), config.Shared())
 	if err != nil {
 		return styleError.Render("Cannot open store: " + err.Error())
 	}
@@ -1284,7 +1284,7 @@ func (m Model) renderCalendarPicker() string {
 
 func loadEvents(weekOffset, days int) tea.Cmd {
 	return func() tea.Msg {
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return errMsg{err}
 		}
@@ -1307,7 +1307,7 @@ func syncCmd(weekOffset, days int) tea.Cmd {
 		if err != nil {
 			return syncDoneMsg{err: err}
 		}
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return syncDoneMsg{err: err}
 		}
@@ -1365,7 +1365,7 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 			UpdatedAt: time.Now(),
 		}
 
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return eventCreatedMsg{err: err}
 		}
@@ -1426,7 +1426,7 @@ func deleteEventCmd(e *models.Event) tea.Cmd {
 		if err := calendar.DeleteEvent(e); err != nil {
 			return eventDeletedMsg{err: err}
 		}
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err == nil {
 			defer s.Close()
 			_ = s.DeleteByID(context.Background(), e.ID)
@@ -1459,7 +1459,7 @@ func undoDeleteEventCmd(e *models.Event) tea.Cmd {
 		if err := calendar.CreateEvent(restored); err != nil {
 			return eventCreatedMsg{err: err}
 		}
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return eventCreatedMsg{err: err}
 		}

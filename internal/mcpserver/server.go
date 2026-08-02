@@ -188,7 +188,7 @@ func handleSync(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult
 		return mcp.NewToolResultError("sync failed: " + err.Error()), nil
 	}
 
-	s, err := store.New(config.DBPath())
+	s, err := store.New(config.DBPath(), config.Shared())
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -294,7 +294,7 @@ func handleCreateEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	}
 
 	// Cache in SQLite so subsequent list_events calls show it immediately.
-	if s, err := store.New(config.DBPath()); err == nil {
+	if s, err := store.New(config.DBPath(), config.Shared()); err == nil {
 		defer s.Close()
 		_ = s.UpsertEvent(context.Background(), e)
 	}
@@ -324,7 +324,7 @@ func handleDeleteEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	}
 
 	// find the event in cache to get its full data (start time, calendar)
-	s, err := store.New(config.DBPath())
+	s, err := store.New(config.DBPath(), config.Shared())
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -359,7 +359,7 @@ func handleDeleteEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func loadEvents(from, to time.Time) ([]models.Event, error) {
-	s, err := store.New(config.DBPath())
+	s, err := store.New(config.DBPath(), config.Shared())
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}

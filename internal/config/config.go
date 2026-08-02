@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	coreconfig "github.com/aeon022/missionctl-core/config"
 	"github.com/spf13/viper"
 )
 
@@ -15,6 +16,7 @@ type Config struct {
 	WorkingDays       []string     `mapstructure:"working_days"`
 	MinFreeSlot       int          `mapstructure:"min_free_slot_min"`
 	ExcludedCalendars []string     `mapstructure:"excluded_calendars"`
+	DataDir           string       `mapstructure:"data_dir"`
 	Google            GoogleConfig `mapstructure:"google"`
 }
 
@@ -40,6 +42,8 @@ func Load() error {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(dir)
 	viper.AddConfigPath(".")
+	viper.SetEnvPrefix("CALCTL")
+	viper.AutomaticEnv()
 
 	viper.SetDefault("default_calendar", "")
 	viper.SetDefault("working_hours_from", "09:00")
@@ -66,12 +70,28 @@ func Load() error {
 // to point at a temporary database instead of the real one on disk.
 var DBPathOverride string
 
+// DBPath returns the database file path. DBPathOverride (test-only) wins
+// if set; otherwise data_dir (viper key, also settable via CALCTL_DATA_DIR
+// since AutomaticEnv is on) points it at a user-chosen directory — e.g.
+// inside iCloud Drive or Dropbox — resolved via coreconfig.ResolveDir; with
+// neither set, the private default (~/Library/Application Support/calctl)
+// is unchanged from before this existed.
 func DBPath() string {
 	if DBPathOverride != "" {
 		return DBPathOverride
 	}
+	if dir := viper.GetString("data_dir"); dir != "" {
+		resolved, _ := coreconfig.ResolveDir("calctl", dir)
+		return filepath.Join(resolved, "calctl.db")
+	}
 	dir, _ := os.UserConfigDir()
 	return filepath.Join(dir, "calctl", "calctl.db")
+}
+
+// Shared reports whether DBPath currently resolves to a user-configured
+// directory (data_dir) rather than the tool's private default.
+func Shared() bool {
+	return DBPathOverride == "" && viper.GetString("data_dir") != ""
 }
 
 func TokenPath() string {

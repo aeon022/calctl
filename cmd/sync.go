@@ -34,7 +34,7 @@ var syncCmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return fmt.Errorf("open store: %w", err)
 		}

@@ -29,7 +29,7 @@ var freeCmd = &cobra.Command{
 		to := from.AddDate(0, 0, freeDays)
 
 		ctx := context.Background()
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return fmt.Errorf("open store: %w", err)
 		}

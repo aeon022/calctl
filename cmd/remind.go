@@ -21,7 +21,7 @@ var remindCmd = &cobra.Command{
 default) and send a macOS notification. Same pattern habctl's own
 "remind" uses — ideal as a launchd job running every few minutes.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.New(config.DBPath())
+		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return err
 		}
