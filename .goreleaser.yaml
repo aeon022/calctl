@@ -34,8 +34,23 @@ changelog:
       - "^chore:"
       - "^test:"
 
+# Binaries are released into the private aeon022/missionctl-releases repo
+# instead of this (public) repo, so the Homebrew formula below can gate the
+# download behind a per-buyer GitHub token. The workflow's GITHUB_TOKEN env
+# must be a PAT with contents:write on missionctl-releases (the default
+# Actions token only covers this repo).
+release:
+  github:
+    owner: aeon022
+    name: missionctl-releases
+
 # Publishing to the Homebrew tap requires the HOMEBREW_TAP_TOKEN secret
 # (fine-grained PAT with contents:write on aeon022/homebrew-tap).
+#
+# The formula download is gated: url_template points at the private
+# missionctl-releases repo, and download_strategy/custom_require wire in
+# Formula/custom_download_strategy.rb (already in the tap) so `brew install`
+# only works with a valid HOMEBREW_GITHUB_API_TOKEN scoped to that repo.
 brews:
   - repository:
       owner: aeon022
@@ -44,7 +59,10 @@ brews:
     directory: Formula
     homepage: https://github.com/aeon022/calctl
     license: MIT
-    description: "Calendar management from your terminal - local-first CLI/TUI for Apple Calendar"
+    description: "Calendar management from your terminal - local-first CLI/TUI for Apple Calendar (Pro build, requires a purchased license — see https://missionctl.sh)"
+    url_template: "https://github.com/aeon022/missionctl-releases/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    download_strategy: GitHubPrivateRepositoryReleaseDownloadStrategy
+    custom_require: "custom_download_strategy"
     install: |
       bin.install "calctl"
     test: |
