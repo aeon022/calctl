@@ -12,6 +12,7 @@ import (
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
 	"github.com/aeon022/missionctl-core/humanize"
+	"github.com/aeon022/missionctl-core/keymap"
 	"github.com/aeon022/missionctl-core/lastsync"
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/theme"
@@ -1180,33 +1181,28 @@ func (m *Model) advanceCursorPastHeader() {
 }
 
 func (m Model) helpContent() string {
-	row := func(k, desc string) string {
-		return "  " + styleStatusKey.Render(fmt.Sprintf("%-9s", k)) + styleStatusBar.Render(desc) + "\n"
-	}
-	section := func(t string) string { return "\n  " + styleHeader.Render(t) + "\n" }
-
-	var b strings.Builder
-	b.WriteString(section("Navigation"))
-	b.WriteString(row("j / ↓", "next event"))
-	b.WriteString(row("k / ↑", "previous event"))
-	b.WriteString(row("h / ←", "previous week"))
-	b.WriteString(row("l / →", "next week"))
-	b.WriteString(row("+ / -", "show more / fewer days (7–90)"))
-	b.WriteString(section("Events"))
-	b.WriteString(row("enter", "event detail"))
-	b.WriteString(row("n", "new event"))
-	b.WriteString(row("e", "edit event"))
-	b.WriteString(row("d", "delete event (asks to confirm)"))
-	b.WriteString(section("Views & Data"))
-	b.WriteString(row("/", "filter events (title, location, calendar, notes)"))
-	b.WriteString(row("esc", "clear active filter"))
-	b.WriteString(row("f", "free slots"))
-	b.WriteString(row("c", "set default calendar for new events"))
-	b.WriteString(row("s", "sync from Apple Calendar"))
-	b.WriteString(section("Other"))
-	b.WriteString(row("?", "toggle this help"))
-	b.WriteString(row("q", "quit"))
-	return b.String()
+	return keymap.New("calctl", "calendar from the terminal").
+		Section("Navigation").
+		Row("j / ↓", "next event").
+		Row("k / ↑", "previous event").
+		Row("h / ←", "previous week").
+		Row("l / →", "next week").
+		Row("+ / -", "show more / fewer days (7–90)").
+		Section("Events").
+		Row("enter", "event detail").
+		Row("n", "new event").
+		Row("e", "edit event").
+		Row("d", "delete event (asks to confirm)").
+		Section("Views & Data").
+		Row("/", "filter events (title, location, calendar, notes)").
+		Row("esc", "clear active filter").
+		Row("f", "free slots").
+		Row("c", "set default calendar for new events").
+		Row("s", "sync from Apple Calendar").
+		Section("Other").
+		Row("?", "toggle this help").
+		Row("q", "quit").
+		String()
 }
 
 // openHelp sizes and populates the transient help popup (see
