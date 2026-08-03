@@ -15,6 +15,7 @@ import (
 	"github.com/aeon022/missionctl-core/keymap"
 	"github.com/aeon022/missionctl-core/lastsync"
 	"github.com/aeon022/missionctl-core/overlay"
+	"github.com/aeon022/missionctl-core/palette"
 	"github.com/aeon022/missionctl-core/theme"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -219,6 +220,11 @@ type Model struct {
 	searchInput textinput.Model
 	searchQ     string
 
+	// ":" command palette
+	inPalette     bool
+	paletteInput  textinput.Model
+	paletteCursor int
+
 	// "?" transient help popup
 	helpVP   viewport.Model
 	helpPopW int
@@ -249,6 +255,28 @@ type row struct {
 	event    *models.Event
 }
 
+// ── command palette (":") ────────────────────────────────────────────────────
+//
+// Types out full words instead of memorizing single-key shortcuts. Reuses
+// the exact same key handling every shortcut already goes through (the
+// list-view switch in Update) by replaying the mapped keypress through
+// Update itself. Matching logic lives in missionctl-core/palette (shared
+// across the suite); this list is calctl-specific.
+var paletteCommands = []palette.Command{
+	{Name: "new", Desc: "New event", Key: "n"},
+	{Name: "edit", Desc: "Edit selected event", Key: "e"},
+	{Name: "delete", Desc: "Delete event (asks to confirm)", Key: "d"},
+	{Name: "detail", Desc: "Event detail", Key: "enter"},
+	{Name: "copy", Desc: "Copy title to clipboard", Key: "y"},
+	{Name: "undo", Desc: "Undo last delete", Key: "u"},
+	{Name: "free", Desc: "Free slots", Key: "f"},
+	{Name: "calendar", Desc: "Set default calendar for new events", Key: "c"},
+	{Name: "sync", Desc: "Sync from Apple Calendar", Key: "s"},
+	{Name: "search", Desc: "Filter events", Key: "/"},
+	{Name: "help", Desc: "Show help", Key: "?"},
+	{Name: "quit", Desc: "Quit calctl", Key: "q"},
+}
+
 func New() Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
@@ -257,10 +285,16 @@ func New() Model {
 	si := textinput.New()
 	si.Placeholder = "filter events…"
 	si.CharLimit = 100
+
+	pi := textinput.New()
+	pi.Placeholder = "command…"
+	pi.CharLimit = 40
+
 	return Model{
 		daysAhead:    7,
 		loading:      true,
 		searchInput:  si,
+		paletteInput: pi,
 		sp:           sp,
 		hoverRow:     -1,
 		lastClickRow: -1,
@@ -526,6 +560,54 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// ── command palette ───────────────────────────────────────────────────────
+	if m.inPalette {
+		closePalette := func(mm Model) Model {
+			mm.inPalette = false
+			mm.paletteInput.Blur()
+			mm.paletteInput.SetValue("")
+			mm.paletteCursor = 0
+			return mm
+		}
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			return closePalette(m), nil
+		case "up", "ctrl+p":
+			if m.paletteCursor > 0 {
+				m.paletteCursor--
+			}
+			return m, nil
+		case "down", "ctrl+n":
+			matches := palette.Match(paletteCommands, m.paletteInput.Value())
+			if m.paletteCursor < len(matches)-1 {
+				m.paletteCursor++
+			}
+			return m, nil
+		case "enter":
+			matches := palette.Match(paletteCommands, m.paletteInput.Value())
+			if len(matches) == 0 {
+				return closePalette(m), nil
+			}
+			if m.paletteCursor >= len(matches) {
+				m.paletteCursor = len(matches) - 1
+			}
+			chosen := matches[m.paletteCursor]
+			m = closePalette(m)
+			replay := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(chosen.Key)}
+			if chosen.Key == "enter" {
+				replay = tea.KeyMsg{Type: tea.KeyEnter}
+			}
+			newM, cmd := m.Update(replay)
+			return newM.(Model), cmd
+		}
+		var cmd tea.Cmd
+		m.paletteInput, cmd = m.paletteInput.Update(msg)
+		m.paletteCursor = 0
+		return m, cmd
+	}
+
 	// ── search input ──────────────────────────────────────────────────────────
 	if m.searching {
 		switch msg.String() {
@@ -662,6 +744,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.searching || m.searchQ != "" {
 			contentHeight -= 2
 		}
+		if m.inPalette {
+			contentHeight -= 8
+		}
 		visible, start := m.visibleRowsWithStart(contentHeight)
 		count := 0
 		for i, r := range visible {
@@ -747,6 +832,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searching = true
 		m.searchInput.SetValue("")
 		return m, m.searchInput.Focus()
+
+	case ":":
+		m.inPalette = true
+		m.paletteCursor = 0
+		m.paletteInput.SetValue("")
+		return m, m.paletteInput.Focus()
 
 	case "?":
 		m = m.openHelp()
@@ -913,14 +1004,47 @@ func (m Model) renderList() string {
 		b.WriteString("  " + styleCal.Render("filter: /"+m.searchQ+"  (esc to clear)") + "\n\n")
 		contentHeight -= 2
 	}
+	if m.inPalette {
+		b.WriteString("  " + m.paletteInput.View() + "\n")
+		matches := palette.Match(paletteCommands, m.paletteInput.Value())
+		if len(matches) > 6 {
+			matches = matches[:6]
+		}
+		if len(matches) == 0 {
+			b.WriteString("    " + styleCal.Render("no matching command") + "\n")
+		}
+		for i, c := range matches {
+			row := fmt.Sprintf("%-9s %s", c.Name, c.Desc)
+			if i == m.paletteCursor {
+				b.WriteString("    " + styleTitleSelected.Render("▶ "+row) + "\n")
+			} else {
+				b.WriteString("      " + styleCal.Render(row) + "\n")
+			}
+		}
+		b.WriteString("\n")
+		contentHeight -= 8
+	}
 	visibleRows := m.visibleRows(contentHeight)
 
+	// visibleRows windows by row COUNT, but a header row costs 2 physical
+	// lines (banner + divider) against a budget sized in row units — with
+	// many single-event days (many headers packed close together), that
+	// mismatch can render more physical lines than contentHeight actually
+	// allows. Stop hard at the real line budget rather than trusting the
+	// row-count window alone, so the palette/search bar above it can never
+	// get pushed off screen by an under-budgeted tail of the list.
+	linesUsed := 0
 	for _, r := range visibleRows {
+		if linesUsed >= contentHeight {
+			break
+		}
 		if r.isHeader {
 			b.WriteString("  " + styleDateBanner.Render(r.label) + "\n")
 			b.WriteString("  " + styleDivider.Render(strings.Repeat("─", m.width-4)) + "\n")
+			linesUsed += 2
 			continue
 		}
+		linesUsed++
 
 		e := r.event
 		selected := m.rows[m.cursor] == r
@@ -980,9 +1104,15 @@ func (m Model) rowHitTest(y int) int {
 	if m.searching || m.searchQ != "" {
 		row += 2
 	}
+	if m.inPalette {
+		row += 8
+	}
 	contentHeight := m.height - 6
 	if m.searching || m.searchQ != "" {
 		contentHeight -= 2
+	}
+	if m.inPalette {
+		contentHeight -= 8
 	}
 	visible, start := m.visibleRowsWithStart(contentHeight)
 	for i, r := range visible {
@@ -1195,6 +1325,7 @@ func (m Model) helpContent() string {
 		Row("d", "delete event (asks to confirm)").
 		Section("Views & Data").
 		Row("/", "filter events (title, location, calendar, notes)").
+		Row(":", "command palette — type an action by name").
 		Row("esc", "clear active filter").
 		Row("f", "free slots").
 		Row("c", "set default calendar for new events").

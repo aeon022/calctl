@@ -6,10 +6,89 @@ import (
 	"time"
 
 	"github.com/aeon022/calctl/internal/models"
+	"github.com/aeon022/missionctl-core/palette"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
+
+func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
+	m := New()
+	m.width, m.height = 100, 30
+	m.loading = false
+
+	mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	m = mi.(Model)
+	if !m.inPalette {
+		t.Fatal("expected inPalette after ':'")
+	}
+
+	for _, r := range "syn" {
+		mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = mi.(Model)
+	}
+	matches := palette.Match(paletteCommands, m.paletteInput.Value())
+	if len(matches) == 0 || matches[0].Name != "sync" {
+		t.Fatalf("expected 'sync' to be the top match for query %q, got %v", m.paletteInput.Value(), matches)
+	}
+
+	mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mi.(Model)
+	if m.inPalette {
+		t.Error("expected palette to close after executing a command")
+	}
+	if !m.syncing {
+		t.Error("expected 'sync' command to replay 's' and start syncing")
+	}
+}
+
+func TestCommandPalette_EscCloses(t *testing.T) {
+	m := New()
+	m.width, m.height = 100, 30
+	m.loading = false
+	mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	m = mi.(Model)
+
+	mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = mi.(Model)
+	if m.inPalette {
+		t.Error("expected esc to close the palette")
+	}
+}
+
+// TestCommandPalette_ManyHeadersDoesNotOverflow is a regression test for a
+// real bug caught via live tmux testing: visibleRows windows by row COUNT,
+// but a header row costs 2 physical lines against that budget. With many
+// single-event days (many headers packed close together) plus the
+// palette's own 8 lines eating into the same budget, the rendered view
+// exceeded the terminal height and pushed the palette's own input line off
+// the top of the screen.
+func TestCommandPalette_ManyHeadersDoesNotOverflow(t *testing.T) {
+	m := New()
+	m.width, m.height = 100, 30
+	m.loading = false
+
+	// 25 distinct days, one event each — worst case for the row/line
+	// mismatch (every event row is preceded by its own 2-line header).
+	for i := 0; i < 25; i++ {
+		day := time.Date(2026, 8, 1+i, 0, 0, 0, 0, time.UTC)
+		m.rows = append(m.rows,
+			row{isHeader: true, label: day.Format("Mon, Jan 02")},
+			row{event: &models.Event{ID: string(rune('a' + i)), Title: "Event", StartTime: day, EndTime: day}},
+		)
+	}
+
+	mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	m = mi.(Model)
+
+	lines := strings.Split(m.View(), "\n")
+	if len(lines) > m.height {
+		t.Errorf("rendered view is %d lines, exceeds terminal height %d — palette input would be pushed off screen", len(lines), m.height)
+	}
+	if !strings.Contains(m.View(), "command…") {
+		t.Error("expected the palette input line to still be visible in the rendered view")
+	}
+}
 
 func TestHelpOverlay_OpenScrollClose(t *testing.T) {
 	m := New()
