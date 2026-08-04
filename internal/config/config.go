@@ -18,6 +18,44 @@ type Config struct {
 	ExcludedCalendars []string     `mapstructure:"excluded_calendars"`
 	DataDir           string       `mapstructure:"data_dir"`
 	Google            GoogleConfig `mapstructure:"google"`
+	LicenseKey        string       `mapstructure:"license_key"`
+	LicenseStatus     string       `mapstructure:"license_status"`
+}
+
+// defaultPolarOrgID is aeon022's Polar.sh organization — shared across the
+// missionctl suite, same as postctl's.
+const defaultPolarOrgID = "aa792ea4-650e-492e-a955-9b3d564e943e"
+
+// IsPro reports whether a valid Pro/Bundle license is active on this
+// machine — gates the `calctl summarize` command.
+func IsPro() bool {
+	return Active.LicenseStatus == "active"
+}
+
+func PolarOrgID() string {
+	if v := viper.GetString("polar_org_id"); v != "" {
+		return v
+	}
+	return defaultPolarOrgID
+}
+
+// SetLicense persists the license key/status to
+// ~/Library/Application Support/calctl/config.yaml and updates Active
+// immediately.
+func SetLicense(key, status string) error {
+	viper.Set("license_key", key)
+	viper.Set("license_status", status)
+	Active.LicenseKey = key
+	Active.LicenseStatus = status
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	cfgDir := filepath.Join(dir, "calctl")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		return err
+	}
+	return viper.WriteConfigAs(filepath.Join(cfgDir, "config.yaml"))
 }
 
 type GoogleConfig struct {

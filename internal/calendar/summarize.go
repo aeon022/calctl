@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	anthropic "github.com/anthropics/anthropic-sdk-go"
+	coreai "github.com/aeon022/missionctl-core/ai"
 	"github.com/aeon022/calctl/internal/models"
 )
 
-// Summarize generates a structured meeting summary for the given event using Claude Haiku.
+const summarizeSystemPrompt = "You are a professional meeting assistant."
+
+// Summarize generates a structured meeting summary for the given event
+// using the configured AI provider (Anthropic, OpenAI, Gemini, or a local
+// Ollama model — see missionctl-core/ai).
 func Summarize(ctx context.Context, event *models.Event) (string, error) {
 	var parts []string
 
@@ -51,7 +55,7 @@ func Summarize(ctx context.Context, event *models.Event) (string, error) {
 
 	eventInfo := strings.Join(parts, "\n")
 
-	prompt := fmt.Sprintf(`You are a professional meeting assistant. Based on the calendar event details below, generate a structured meeting summary.
+	prompt := fmt.Sprintf(`Based on the calendar event details below, generate a structured meeting summary.
 
 %s
 
@@ -63,26 +67,13 @@ Write a structured meeting summary with these sections:
 
 Keep it concise and professional. If specific decisions or action items are not available from the event data, note that they should be filled in after the meeting.`, eventInfo)
 
-	client := anthropic.NewClient()
-
-	response, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeHaiku4_5,
-		MaxTokens: 1024,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
-	})
+	info, err := coreai.Detect("CALCTL")
 	if err != nil {
-		return "", fmt.Errorf("claude api: %w", err)
+		return "", err
 	}
-
-	var text string
-	for _, block := range response.Content {
-		switch v := block.AsAny().(type) {
-		case anthropic.TextBlock:
-			text = v.Text
-		}
+	text, err := coreai.Call(ctx, info, summarizeSystemPrompt, prompt, nil)
+	if err != nil {
+		return "", err
 	}
-
 	return strings.TrimSpace(text), nil
 }

@@ -17,11 +17,14 @@ import (
 
 var summarizeCmd = &cobra.Command{
 	Use:   "summarize",
-	Short: "Generate a meeting summary using Claude AI",
+	Short: "Generate a meeting summary using AI — missionctl Bundle feature",
 	Example: `  calctl summarize --event-title "Sprint Planning"
   calctl summarize --date 2026-10-01 --event-title "Standup"
   calctl summarize --event-title "Design Review" --email`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !config.IsPro() {
+			return fmt.Errorf("calctl summarize is a missionctl Bundle feature — get it at https://missionctl.sh/#pricing, then: calctl license activate <key>")
+		}
 		eventTitle, _ := cmd.Flags().GetString("event-title")
 		dateStr, _ := cmd.Flags().GetString("date")
 		emailFlag, _ := cmd.Flags().GetBool("email")

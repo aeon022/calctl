@@ -206,6 +206,29 @@ calctl mcp
 
 ---
 
+### `calctl summarize`
+
+Generate a structured AI meeting summary for an event — [missionctl Bundle](https://missionctl.sh/#pricing) feature.
+
+```bash
+calctl summarize --event-title "Sprint Planning"
+calctl summarize --date 2026-10-01 --event-title "Standup"
+calctl summarize --event-title "Design Review" --email   # writes a mailctl draft file
+```
+
+---
+
+### `calctl license`
+
+Activate or check your [missionctl Bundle](https://missionctl.sh/#pricing) license, which unlocks `calctl summarize`.
+
+```bash
+calctl license activate <key>
+calctl license status
+```
+
+---
+
 ## Event Markdown Format
 
 Events can be written as Markdown files and created with `calctl import`. The frontmatter block is required; the body is optional and treated as additional description.
@@ -373,6 +396,7 @@ Once set, calctl automatically switches its SQLite journal mode from WAL to roll
 
 - macOS with Apple Calendar
 - Go 1.21+
+- `calctl summarize` requires an active [missionctl Bundle](https://missionctl.sh/#pricing) license (`calctl license activate <key>`), plus one of: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, a free `GEMINI_API_KEY` ([aistudio.google.com/apikey](https://aistudio.google.com/apikey), no card required), or a locally running [Ollama](https://ollama.com) — auto-detected in that order, override with `CALCTL_PROVIDER`. Everything else works fully without a license or any of these.
 
 ---
 
