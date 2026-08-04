@@ -23,8 +23,5 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
-          # PAT with contents:write on aeon022/missionctl-releases (private) —
-          # the release now goes there, not to this repo, so the default
-          # Actions-scoped GITHUB_TOKEN doesn't have the needed permission.
-          GITHUB_TOKEN: ${{ secrets.PRIVATE_RELEASES_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
