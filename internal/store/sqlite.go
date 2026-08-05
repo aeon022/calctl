@@ -196,6 +196,35 @@ func (s *Store) DeleteBySource(ctx context.Context, source string, from, to time
 	return err
 }
 
+// ReconcileEchoes drops stale "calctl"-sourced echo rows once the same event
+// comes back through a sync as a fresh "apple"-sourced row. Creating an
+// event inserts a row immediately (source "calctl") so callers see it
+// without waiting on a sync; once that same event is fetched here as a real
+// "apple" row, the echo is a stale duplicate. Matched by title + exact start
+// time, not ID, since AppleScript-created events don't hand back their
+// EventKit identifier at creation time.
+//
+// Both the CLI (`calctl sync`) and the MCP `sync` tool call this — it used
+// to live only in the CLI path, so the MCP path silently accumulated
+// duplicate rows for every event created through it.
+func (s *Store) ReconcileEchoes(ctx context.Context, synced []models.Event, from, to time.Time) error {
+	echoes, err := s.ListBySource(ctx, "calctl", from, to)
+	if err != nil {
+		return err
+	}
+	for _, echo := range echoes {
+		for _, ev := range synced {
+			if ev.Title == echo.Title && ev.StartTime.Equal(echo.StartTime) {
+				if err := s.DeleteByID(ctx, echo.ID); err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
 func scanEvents(rows *sql.Rows) ([]models.Event, error) {
 	var events []models.Event
 	for rows.Next() {

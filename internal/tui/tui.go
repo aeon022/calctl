@@ -1444,6 +1444,7 @@ func syncCmd(weekOffset, days int) tea.Cmd {
 		for i := range events {
 			_ = s.UpsertEvent(ctx, &events[i])
 		}
+		_ = s.ReconcileEchoes(ctx, events, from, to)
 		stored, err := s.ListEvents(ctx, from, to)
 		return syncDoneMsg{events: stored, err: err}
 	}

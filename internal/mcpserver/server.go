@@ -199,6 +199,7 @@ func handleSync(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult
 	for i := range events {
 		_ = s.UpsertEvent(ctx, &events[i])
 	}
+	_ = s.ReconcileEchoes(ctx, events, from, to)
 
 	return mcp.NewToolResultText(fmt.Sprintf("Synced %d events (%s → %s).",
 		len(events),

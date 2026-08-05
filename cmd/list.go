@@ -53,6 +53,9 @@ var listCmd = &cobra.Command{
 					return err
 				}
 			}
+			if err := s.ReconcileEchoes(ctx, events, from, to); err != nil {
+				return err
+			}
 		}
 
 		events, err := s.ListEvents(ctx, from, to)

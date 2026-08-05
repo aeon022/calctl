@@ -110,6 +110,32 @@ func fetchViaEventKit(from, to time.Time) ([]models.Event, error) {
 	return parseEvents(strings.TrimSpace(string(out))), nil
 }
 
+// appleScriptSetDate returns AppleScript statements that point varName at
+// the local wall-clock instant described by t, built via property
+// assignment (year/month/day/time) instead of epoch arithmetic.
+//
+// The previous approach — "(current date) + (targetEpoch - nowEpoch)" —
+// silently drifted by exactly the DST offset whenever "now" and the target
+// date sit on opposite sides of a daylight-saving transition: computing a
+// November target while running in August (CEST) landed on 01:00 instead of
+// 00:00, because the epoch diff bakes in August's UTC offset rather than
+// November's. Confirmed by direct osascript testing while chasing a
+// "delete_event can't find events past October" bug. Building the date via
+// property assignment stays entirely in AppleScript's own local-time engine
+// (the same one "start date of evt" is expressed in), so it's DST-correct
+// by construction. day is set twice to dodge invalid intermediate dates
+// (e.g. currently day 31 while switching to a month that has fewer days).
+func appleScriptSetDate(varName string, t time.Time) string {
+	seconds := t.Hour()*3600 + t.Minute()*60 + t.Second()
+	return fmt.Sprintf(`set %s to current date
+set day of %s to 1
+set year of %s to %d
+set month of %s to %d
+set day of %s to %d
+set time of %s to %d`,
+		varName, varName, varName, t.Year(), varName, int(t.Month()), varName, t.Day(), varName, seconds)
+}
+
 // CreateEvent creates a new event in Apple Calendar via AppleScript.
 //
 // Requires e.Calendar to be set — it used to silently fall back to
@@ -157,8 +183,7 @@ func DeleteEvent(e *models.Event) error {
 	escapedTitle := escapeAppleScript(e.Title)
 
 	script := fmt.Sprintf(`
-set nowUnix to (do shell script "date '+%%s'") as integer
-set targetDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - nowUnix)
+%s
 set deletedCount to 0
 tell application "Calendar"
 	repeat with c in calendars
@@ -171,7 +196,7 @@ tell application "Calendar"
 	reload calendars
 end tell
 return deletedCount as string
-`, startISO, escapedTitle)
+`, appleScriptSetDate("targetDate", e.StartTime), escapedTitle)
 	out, err := runAppleScript(script)
 	if err != nil {
 		return err
@@ -294,8 +319,6 @@ func buildCreateScript(e *models.Event) string {
 		recurrenceLine = fmt.Sprintf(`set recurrence of newEvent to "%s"`, escapeAppleScript(e.Recurrence))
 	}
 
-	startISO := e.StartTime.Format("2006-01-02T15:04:05")
-	endISO := e.EndTime.Format("2006-01-02T15:04:05")
 	escapedCal := escapeAppleScript(calName)
 	escapedTitle := escapeAppleScript(e.Title)
 
@@ -303,8 +326,8 @@ func buildCreateScript(e *models.Event) string {
 	// "tell calendar NAME" only resolves iCloud calendars reliably on some macOS
 	// versions; iterating calendars finds Exchange/Google/other account calendars too.
 	return fmt.Sprintf(`
-set startDate to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
-set endDate   to (current date) + ((do shell script "date -jf '%%Y-%%m-%%dT%%H:%%M:%%S' '%s' '+%%s'") as integer - (do shell script "date '+%%s'") as integer)
+%s
+%s
 
 tell application "Calendar"
 	set foundCal to missing value
@@ -326,7 +349,7 @@ tell application "Calendar"
 	end tell
 	reload calendars
 end tell
-`, startISO, endISO, escapedCal, escapedCal, escapedTitle,
+`, appleScriptSetDate("startDate", e.StartTime), appleScriptSetDate("endDate", e.EndTime), escapedCal, escapedCal, escapedTitle,
 		locationLine, notesLine, allDayLine, recurrenceLine)
 }
 

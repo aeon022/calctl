@@ -178,3 +178,63 @@ func TestAllDayEventRoundTrips(t *testing.T) {
 		t.Errorf("expected 2 attendees to round-trip, got %d", len(events[0].Attendees))
 	}
 }
+
+func TestReconcileEchoesDropsMatchingEcho(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	start := time.Date(2026, 7, 26, 22, 0, 0, 0, time.UTC)
+	from, to := start.Add(-time.Hour), start.Add(time.Hour)
+
+	echo := sampleEvent("calctl-abc", start)
+	echo.Title = "Zahnarzt"
+	echo.Source = "calctl"
+	unmatched := sampleEvent("calctl-def", start)
+	unmatched.Title = "Unmatched"
+	unmatched.Source = "calctl"
+	if err := s.UpsertEvent(ctx, echo); err != nil {
+		t.Fatalf("UpsertEvent echo: %v", err)
+	}
+	if err := s.UpsertEvent(ctx, unmatched); err != nil {
+		t.Fatalf("UpsertEvent unmatched: %v", err)
+	}
+
+	synced := []models.Event{{Title: "Zahnarzt", StartTime: start, Source: "apple"}}
+	if err := s.ReconcileEchoes(ctx, synced, from, to); err != nil {
+		t.Fatalf("ReconcileEchoes: %v", err)
+	}
+
+	remaining, err := s.ListBySource(ctx, "calctl", from, to)
+	if err != nil {
+		t.Fatalf("ListBySource: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].ID != "calctl-def" {
+		t.Fatalf("expected only the unmatched echo to remain, got %+v", remaining)
+	}
+}
+
+func TestReconcileEchoesKeepsEchoWhenStartTimeDiffers(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	start := time.Date(2026, 7, 26, 22, 0, 0, 0, time.UTC)
+	from, to := start.Add(-time.Hour), start.Add(time.Hour)
+
+	echo := sampleEvent("calctl-abc", start)
+	echo.Title = "Zahnarzt"
+	echo.Source = "calctl"
+	if err := s.UpsertEvent(ctx, echo); err != nil {
+		t.Fatalf("UpsertEvent: %v", err)
+	}
+
+	synced := []models.Event{{Title: "Zahnarzt", StartTime: start.Add(time.Hour), Source: "apple"}}
+	if err := s.ReconcileEchoes(ctx, synced, from, to); err != nil {
+		t.Fatalf("ReconcileEchoes: %v", err)
+	}
+
+	remaining, err := s.ListBySource(ctx, "calctl", from, to)
+	if err != nil {
+		t.Fatalf("ListBySource: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("expected the echo to survive a non-matching sync, got %+v", remaining)
+	}
+}
