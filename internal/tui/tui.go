@@ -82,8 +82,16 @@ var (
 			Foreground(colorBlue).
 			Bold(true)
 
+	// Solid badge, not just colored text — plain foreground-only red in the
+	// header's top-right corner (e.g. a delete's "no matching event found")
+	// was easy to miss entirely against everything else competing for that
+	// one line. A filled badge draws the eye regardless of where on screen
+	// it sits.
 	styleError = lipgloss.NewStyle().
-			Foreground(colorRed)
+			Bold(true).
+			Foreground(theme.OnAccent).
+			Background(colorRed).
+			Padding(0, 1)
 
 	styleLoading = lipgloss.NewStyle().
 			Foreground(colorAmber)
@@ -1503,9 +1511,17 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 		defer s.Close()
 		ctx := context.Background()
 
-		// edit = delete old + create new
+		// edit = delete old + create new. Abort before creating the
+		// replacement if the old event's real Calendar.app deletion fails —
+		// used to ignore this error and delete the DB row unconditionally,
+		// which on failure left the original event alive and untracked in
+		// Calendar.app while a new, separate event got created alongside
+		// it (same ghost-event class of bug as a plain failed delete, just
+		// reachable via edit instead).
 		if editTarget != nil {
-			_ = calendar.DeleteEvent(editTarget)
+			if err := calendar.DeleteEvent(editTarget); err != nil {
+				return eventCreatedMsg{err: fmt.Errorf("could not remove original event before edit: %w", err)}
+			}
 			_ = s.DeleteByID(ctx, editTarget.ID)
 		}
 
