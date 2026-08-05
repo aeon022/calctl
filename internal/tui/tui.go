@@ -1318,11 +1318,14 @@ func (m Model) helpContent() string {
 		Row("h / ←", "previous week").
 		Row("l / →", "next week").
 		Row("+ / -", "show more / fewer days (7–90)").
+		Row("1-9", "jump to nth visible event").
 		Section("Events").
 		Row("enter", "event detail").
 		Row("n", "new event").
 		Row("e", "edit event").
 		Row("d", "delete event (asks to confirm)").
+		Row("u", "undo last delete").
+		Row("y", "copy event title").
 		Section("Views & Data").
 		Row("/", "filter events (title, location, calendar, notes)").
 		Row(":", "command palette — type an action by name").
