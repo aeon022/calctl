@@ -31,8 +31,8 @@ type Config struct {
 // our org grants access", so this is a no-op until both are filled in
 // once the individual product is created and its benefit ID is known.
 const (
-	bundleBenefitID = ""
-	calctlBenefitID = ""
+	bundleBenefitID = "de1be860-1dfc-43da-99a8-206fb2573f09"
+	calctlBenefitID = "bd1747fd-bf89-4f83-8083-b585ace16ffb"
 )
 
 // IsPro reports whether a valid Pro/Bundle or calctl-only license is
