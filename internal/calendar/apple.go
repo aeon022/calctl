@@ -297,6 +297,122 @@ return output
 	return parseEvents(out), nil
 }
 
+// CreateEvents creates multiple events in a single AppleScript run instead of
+// one run per event.
+//
+// calctl import (and anything else adding a batch of events, e.g. a whole
+// semester schedule) used to call CreateEvent in a loop. Every call spawned
+// its own osascript process, and buildCreateScript ends each one with
+// "reload calendars" — so a schedule of a few dozen entries fired that many
+// separate synchronous Apple Events at Calendar.app's main thread back to
+// back — with Calendar.app open in the foreground, importing a semester's
+// worth of events froze it hard enough that it had to be force-quit before
+// the entries showed up correctly. Concatenating every event into one script
+// with a single trailing reload turns N processes + N reloads into 1 of
+// each. Each event is wrapped in try/on error so one bad calendar name
+// doesn't abort the rest of the batch; the per-event outcome is returned in
+// the same order as events so callers can still report success/failure per
+// item like they did with the old loop.
+func CreateEvents(events []*models.Event) ([]error, error) {
+	if len(events) == 0 {
+		return nil, nil
+	}
+
+	var b strings.Builder
+	for i, e := range events {
+		if e.Calendar == "" {
+			b.WriteString("set output to output & \"ERR:no calendar specified\\n\"\n")
+			continue
+		}
+		b.WriteString("try\n")
+		b.WriteString(buildCreateScriptIndexed(e, i))
+		b.WriteString("\tset output to output & \"OK\\n\"\n")
+		b.WriteString("on error errMsg\n")
+		b.WriteString("\tset output to output & \"ERR:\" & errMsg & \"\\n\"\n")
+		b.WriteString("end try\n")
+	}
+
+	script := fmt.Sprintf("set output to \"\"\n%stell application \"Calendar\" to reload calendars\nreturn output", b.String())
+
+	out, err := runAppleScript(script)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]error, len(events))
+	lines := strings.Split(out, "\n")
+	for i := range events {
+		if i >= len(lines) {
+			results[i] = fmt.Errorf("no result from AppleScript batch")
+			continue
+		}
+		line := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(line, "ERR:") {
+			results[i] = fmt.Errorf("%s", strings.TrimPrefix(line, "ERR:"))
+		}
+	}
+	return results, nil
+}
+
+// buildCreateScriptIndexed is buildCreateScript without the outer
+// tell-application/reload wrapper and with every variable suffixed by idx,
+// so many of these can be concatenated into one script (as CreateEvents
+// does) without their local variables colliding.
+func buildCreateScriptIndexed(e *models.Event, idx int) string {
+	calName := e.Calendar
+
+	locationLine := ""
+	if e.Location != "" {
+		locationLine = fmt.Sprintf(`set location of newEvent%d to "%s"`, idx, escapeAppleScript(e.Location))
+	}
+	notesLine := ""
+	if e.Notes != "" {
+		notesLine = fmt.Sprintf(`set description of newEvent%d to "%s"`, idx, escapeAppleScript(e.Notes))
+	}
+	allDayLine := ""
+	if e.AllDay {
+		allDayLine = fmt.Sprintf("set allday event of newEvent%d to true", idx)
+	}
+	recurrenceLine := ""
+	if e.Recurrence != "" {
+		recurrenceLine = fmt.Sprintf(`set recurrence of newEvent%d to "%s"`, idx, escapeAppleScript(e.Recurrence))
+	}
+
+	escapedCal := escapeAppleScript(calName)
+	escapedTitle := escapeAppleScript(e.Title)
+	startVar := fmt.Sprintf("startDate%d", idx)
+	endVar := fmt.Sprintf("endDate%d", idx)
+	foundVar := fmt.Sprintf("foundCal%d", idx)
+	eventVar := fmt.Sprintf("newEvent%d", idx)
+
+	return fmt.Sprintf(`%s
+%s
+
+tell application "Calendar"
+	set %s to missing value
+	repeat with c in calendars
+		if name of c is "%s" then
+			set %s to c
+			exit repeat
+		end if
+	end repeat
+	if %s is missing value then
+		error "Calendar not found: %s"
+	end if
+	tell %s
+		set %s to make new event with properties {summary:"%s", start date:%s, end date:%s}
+		%s
+		%s
+		%s
+		%s
+	end tell
+end tell
+`, appleScriptSetDate(startVar, e.StartTime), appleScriptSetDate(endVar, e.EndTime),
+		foundVar, escapedCal, foundVar, foundVar, escapedCal, foundVar,
+		eventVar, escapedTitle, startVar, endVar,
+		locationLine, notesLine, allDayLine, recurrenceLine)
+}
+
 // buildCreateScript assumes e.Calendar is already set — CreateEvent checks
 // that before calling this.
 func buildCreateScript(e *models.Event) string {

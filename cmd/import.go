@@ -69,6 +69,7 @@ Example frontmatter:
 		}
 
 		var imported, failed int
+		var events []*models.Event
 		for _, f := range files {
 			imp, _, err := markdown.ParseFile(f)
 			if err != nil {
@@ -97,22 +98,35 @@ Example frontmatter:
 				continue
 			}
 
-			// Write to Apple Calendar
-			if err := calendar.CreateEvent(event); err != nil {
-				fmt.Fprintf(os.Stderr, "  error creating %q in Apple Calendar: %v\n", event.Title, err)
-				failed++
-				continue
-			}
+			events = append(events, event)
+		}
 
-			// Cache in SQLite
-			if err := s.UpsertEvent(ctx, event); err != nil {
-				fmt.Fprintf(os.Stderr, "  warning: saved to Calendar but cache failed: %v\n", err)
+		// Write everything to Apple Calendar in a single AppleScript run
+		// (one reload at the end) instead of one run + reload per event —
+		// looping calls one at a time reliably froze Calendar.app on larger
+		// imports while it was open. See CreateEvents in internal/calendar/apple.go.
+		if !importDryRun && len(events) > 0 {
+			results, err := calendar.CreateEvents(events)
+			if err != nil {
+				return fmt.Errorf("create events in Apple Calendar: %w", err)
 			}
+			for i, event := range events {
+				if results[i] != nil {
+					fmt.Fprintf(os.Stderr, "  error creating %q in Apple Calendar: %v\n", event.Title, results[i])
+					failed++
+					continue
+				}
 
-			if !isJSON() {
-				fmt.Printf("  ✓ %s  %s\n", event.StartTime.Format("Mon Jan 2, 15:04"), event.Title)
+				// Cache in SQLite
+				if err := s.UpsertEvent(ctx, event); err != nil {
+					fmt.Fprintf(os.Stderr, "  warning: saved to Calendar but cache failed: %v\n", err)
+				}
+
+				if !isJSON() {
+					fmt.Printf("  ✓ %s  %s\n", event.StartTime.Format("Mon Jan 2, 15:04"), event.Title)
+				}
+				imported++
 			}
-			imported++
 		}
 
 		if isJSON() {
