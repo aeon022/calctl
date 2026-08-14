@@ -1857,20 +1857,6 @@ func key(k string) string {
 	return styleStatusKey.Render(k + ":")
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // Run starts the TUI.
 func Run() error {
 	p := tea.NewProgram(New(), tea.WithAltScreen(), tea.WithMouseAllMotion())
