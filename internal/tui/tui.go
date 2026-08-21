@@ -352,7 +352,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.height = msg.Height
+		// -1, not msg.Height: View() fills its height budget exactly and
+		// never ends in a trailing newline — that combination is a
+		// long-standing bubbletea quirk (charmbracelet/bubbletea#304) where
+		// the renderer can fail to fully redraw right at the exact-height
+		// boundary. One row of slack keeps m.height off that boundary.
+		m.height = msg.Height - 1
+		if m.height < 1 {
+			m.height = 1
+		}
 
 	case eventsLoadedMsg:
 		m.loading = false
@@ -991,7 +999,14 @@ func (m Model) renderHeader() string {
 	}
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
-		gap = 0
+		// No room left for right (sync time, status, etc.) — drop it
+		// instead of appending it anyway with zero padding, which would
+		// silently push the line past m.width.
+		right = ""
+		gap = m.width - lipgloss.Width(left)
+		if gap < 0 {
+			gap = 0
+		}
 	}
 	return left + strings.Repeat(" ", gap) + right
 }
@@ -1859,7 +1874,13 @@ func key(k string) string {
 
 // Run starts the TUI.
 func Run() error {
-	p := tea.NewProgram(New(), tea.WithAltScreen(), tea.WithMouseAllMotion())
+	// WithFPS(30), not the 60 default: WithMouseAllMotion forces a full
+	// re-render on every pixel of mouse movement, and 60fps of heavily
+	// styled frames can outpace what the terminal can keep up with —
+	// confirmed as the cause of a severe duplicate-content rendering bug
+	// in notectl (same bubbletea setup). Halving the rate gives the
+	// terminal breathing room.
+	p := tea.NewProgram(New(), tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithFPS(30))
 	_, err := p.Run()
 	return err
 }
