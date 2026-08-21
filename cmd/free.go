@@ -78,18 +78,10 @@ var freeCmd = &cobra.Command{
 				fmt.Printf("%s\n", formatDateLabel(sl.Start))
 				lastDate = sl.Date
 			}
-			h := int(sl.Duration.Minutes()) / 60
-			m := int(sl.Duration.Minutes()) % 60
-			durStr := ""
-			if h > 0 {
-				durStr = fmt.Sprintf("%dh%02dm", h, m)
-			} else {
-				durStr = fmt.Sprintf("%dm", m)
-			}
 			fmt.Printf("  %s – %s  (%s)\n",
 				sl.Start.Format("15:04"),
 				sl.End.Format("15:04"),
-				durStr,
+				models.FormatDuration(sl.Duration),
 			)
 		}
 		fmt.Println()

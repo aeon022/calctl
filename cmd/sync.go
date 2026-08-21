@@ -27,11 +27,6 @@ var syncCmd = &cobra.Command{
 			fmt.Printf("Syncing %d days of Apple Calendar events...\n", syncDays)
 		}
 
-		events, err := calendar.FetchEvents(from, to)
-		if err != nil {
-			return fmt.Errorf("fetch from Apple Calendar: %w", err)
-		}
-
 		ctx := context.Background()
 		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
@@ -39,18 +34,9 @@ var syncCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		if err := s.DeleteBySource(ctx, "apple", from, to); err != nil {
-			return fmt.Errorf("clear old events: %w", err)
-		}
-
-		for i := range events {
-			if err := s.UpsertEvent(ctx, &events[i]); err != nil {
-				return fmt.Errorf("save event: %w", err)
-			}
-		}
-
-		if err := s.ReconcileEchoes(ctx, events, from, to); err != nil {
-			return fmt.Errorf("reconcile echoes: %w", err)
+		events, err := calendar.Sync(ctx, s, from, to)
+		if err != nil {
+			return err
 		}
 
 		if isJSON() {

@@ -354,10 +354,10 @@ func CreateEvents(events []*models.Event) ([]error, error) {
 	return results, nil
 }
 
-// buildCreateScriptIndexed is buildCreateScript without the outer
-// tell-application/reload wrapper and with every variable suffixed by idx,
-// so many of these can be concatenated into one script (as CreateEvents
-// does) without their local variables colliding.
+// buildCreateScriptIndexed builds the create-event AppleScript without a
+// trailing reload, with every variable suffixed by idx so many of these can
+// be concatenated into one script (as CreateEvents does, and buildCreateScript
+// does for a single event) without their local variables colliding.
 func buildCreateScriptIndexed(e *models.Event, idx int) string {
 	calName := e.Calendar
 
@@ -414,59 +414,12 @@ end tell
 }
 
 // buildCreateScript assumes e.Calendar is already set — CreateEvent checks
-// that before calling this.
+// that before calling this. It's buildCreateScriptIndexed(e, 0) (the create
+// logic, minus the reload) plus a trailing reload: a standalone create
+// needs the reload every time, where CreateEvents batches many creates and
+// reloads once at the end instead.
 func buildCreateScript(e *models.Event) string {
-	calName := e.Calendar
-
-	locationLine := ""
-	if e.Location != "" {
-		locationLine = fmt.Sprintf(`set location of newEvent to "%s"`, escapeAppleScript(e.Location))
-	}
-	notesLine := ""
-	if e.Notes != "" {
-		notesLine = fmt.Sprintf(`set description of newEvent to "%s"`, escapeAppleScript(e.Notes))
-	}
-	allDayLine := ""
-	if e.AllDay {
-		allDayLine = "set allday event of newEvent to true"
-	}
-	recurrenceLine := ""
-	if e.Recurrence != "" {
-		recurrenceLine = fmt.Sprintf(`set recurrence of newEvent to "%s"`, escapeAppleScript(e.Recurrence))
-	}
-
-	escapedCal := escapeAppleScript(calName)
-	escapedTitle := escapeAppleScript(e.Title)
-
-	// Search all calendars (which spans all accounts in Calendar.app) by name.
-	// "tell calendar NAME" only resolves iCloud calendars reliably on some macOS
-	// versions; iterating calendars finds Exchange/Google/other account calendars too.
-	return fmt.Sprintf(`
-%s
-%s
-
-tell application "Calendar"
-	set foundCal to missing value
-	repeat with c in calendars
-		if name of c is "%s" then
-			set foundCal to c
-			exit repeat
-		end if
-	end repeat
-	if foundCal is missing value then
-		error "Calendar not found: %s"
-	end if
-	tell foundCal
-		set newEvent to make new event with properties {summary:"%s", start date:startDate, end date:endDate}
-		%s
-		%s
-		%s
-		%s
-	end tell
-	reload calendars
-end tell
-`, appleScriptSetDate("startDate", e.StartTime), appleScriptSetDate("endDate", e.EndTime), escapedCal, escapedCal, escapedTitle,
-		locationLine, notesLine, allDayLine, recurrenceLine)
+	return buildCreateScriptIndexed(e, 0) + "tell application \"Calendar\" to reload calendars\n"
 }
 
 func parseEvents(raw string) []models.Event {

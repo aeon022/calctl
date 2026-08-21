@@ -15,7 +15,6 @@ type Config struct {
 	WorkingHoursFrom string `mapstructure:"working_hours_from"`
 	WorkingHoursTo   string `mapstructure:"working_hours_to"`
 	MinFreeSlot      int    `mapstructure:"min_free_slot_min"`
-	DataDir          string `mapstructure:"data_dir"`
 	LicenseKey       string `mapstructure:"license_key"`
 	LicenseStatus    string `mapstructure:"license_status"`
 	LicenseBenefitID string `mapstructure:"license_benefit_id"`
@@ -46,6 +45,25 @@ func PolarOrgID() string {
 	return licensing.DefaultOrgID
 }
 
+// writeConfig resolves ~/Library/Application Support/calctl (creating it if
+// needed) and writes viper's in-memory config there as config.yaml — shared
+// by SetLicense and SetDefaultCalendar, which both just set a viper key and
+// need it persisted the same way.
+func writeConfig() error {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return fmt.Errorf("config dir: %w", err)
+	}
+	cfgDir := filepath.Join(dir, "calctl")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	if err := viper.WriteConfigAs(filepath.Join(cfgDir, "config.yaml")); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
+}
+
 // SetLicense persists the license key/status/benefit to
 // ~/Library/Application Support/calctl/config.yaml and updates Active
 // immediately.
@@ -53,18 +71,13 @@ func SetLicense(key, status, benefitID string) error {
 	viper.Set("license_key", key)
 	viper.Set("license_status", status)
 	viper.Set("license_benefit_id", benefitID)
+	if err := writeConfig(); err != nil {
+		return err
+	}
 	Active.LicenseKey = key
 	Active.LicenseStatus = status
 	Active.LicenseBenefitID = benefitID
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return err
-	}
-	cfgDir := filepath.Join(dir, "calctl")
-	if err := os.MkdirAll(cfgDir, 0755); err != nil {
-		return err
-	}
-	return viper.WriteConfigAs(filepath.Join(cfgDir, "config.yaml"))
+	return nil
 }
 
 var Active Config
@@ -141,13 +154,8 @@ func LastSyncedPath() string {
 // restart. Used by the TUI's "c" calendar picker.
 func SetDefaultCalendar(name string) error {
 	viper.Set("default_calendar", name)
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return fmt.Errorf("config dir: %w", err)
-	}
-	path := filepath.Join(configDir, "calctl", "config.yaml")
-	if err := viper.WriteConfigAs(path); err != nil {
-		return fmt.Errorf("write config: %w", err)
+	if err := writeConfig(); err != nil {
+		return err
 	}
 	Active.DefaultCalendar = name
 	return nil

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -74,9 +73,12 @@ manually in Calendar.app.`,
 			}
 
 			// parse duration
-			dur, err := parseDuration(addDuration)
+			dur, err := models.ParseDuration(addDuration)
 			if err != nil {
 				return err
+			}
+			if dur == 0 {
+				dur = 60 * time.Minute
 			}
 			end = start.Add(dur)
 		}
@@ -195,33 +197,6 @@ func buildRecurrenceRule(repeat string, count int, until string, loc *time.Locat
 		rule += ";UNTIL=" + untilDate.UTC().Format("20060102T150405Z")
 	}
 	return rule, nil
-}
-
-// parseDuration parses "1h", "30min", "90m", "1h30m", "60" (bare number = minutes).
-func parseDuration(s string) (time.Duration, error) {
-	if s == "" {
-		return 60 * time.Minute, nil
-	}
-	// bare number → minutes
-	if n, err := strconv.Atoi(s); err == nil {
-		return time.Duration(n) * time.Minute, nil
-	}
-	// "Xmin" → minutes
-	s2 := strings.ToLower(s)
-	if strings.HasSuffix(s2, "min") {
-		n, err := strconv.Atoi(strings.TrimSuffix(s2, "min"))
-		if err == nil {
-			return time.Duration(n) * time.Minute, nil
-		}
-	}
-	// "Xh" or "XhYm" — use Go's time.ParseDuration with m→m, h→h
-	// Normalise: "1h30m" is already valid Go duration
-	s2 = strings.ReplaceAll(s2, "min", "m")
-	d, err := time.ParseDuration(s2)
-	if err != nil {
-		return 0, fmt.Errorf("invalid --duration %q (use 1h, 30min, 1h30m, 90)", s)
-	}
-	return d, nil
 }
 
 func init() {

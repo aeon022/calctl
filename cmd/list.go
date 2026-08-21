@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aeon022/calctl/internal/calendar"
@@ -41,19 +42,7 @@ var listCmd = &cobra.Command{
 
 		// Sync from Apple Calendar if requested or cache is empty
 		if listSync {
-			events, err := calendar.FetchEvents(from, to)
-			if err != nil {
-				return fmt.Errorf("fetch from Apple Calendar: %w", err)
-			}
-			if err := s.DeleteBySource(ctx, "apple", from, to); err != nil {
-				return err
-			}
-			for i := range events {
-				if err := s.UpsertEvent(ctx, &events[i]); err != nil {
-					return err
-				}
-			}
-			if err := s.ReconcileEchoes(ctx, events, from, to); err != nil {
+			if _, err := calendar.Sync(ctx, s, from, to); err != nil {
 				return err
 			}
 		}
@@ -100,7 +89,7 @@ func printEvents(events []models.Event, from, to time.Time) {
 		date := e.StartTime.Format("Mon, Jan 02")
 		if date != lastDate {
 			fmt.Printf("\n%s\n", date)
-			fmt.Println(repeatChar("─", 40))
+			fmt.Println(strings.Repeat("─", 40))
 			lastDate = date
 		}
 		timeStr := e.StartTime.Format("15:04") + "–" + e.EndTime.Format("15:04")
@@ -149,14 +138,6 @@ func resolveRange(today, week bool, fromStr, toStr string) (time.Time, time.Time
 		// default: today
 		return dayStart, dayStart.Add(24*time.Hour - time.Second), nil
 	}
-}
-
-func repeatChar(s string, n int) string {
-	out := ""
-	for i := 0; i < n; i++ {
-		out += s
-	}
-	return out
 }
 
 func init() {

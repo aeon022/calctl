@@ -1193,7 +1193,7 @@ func (m Model) renderDetail() string {
 		b.WriteString(fmt.Sprintf("  Time      %s – %s  (%s)\n",
 			e.StartTime.Format("15:04"),
 			e.EndTime.Format("15:04"),
-			formatDur(e.EndTime.Sub(e.StartTime)),
+			models.FormatDuration(e.EndTime.Sub(e.StartTime)),
 		))
 	}
 	if e.Timezone != "" {
@@ -1251,7 +1251,7 @@ func (m Model) renderFree() string {
 		b.WriteString(fmt.Sprintf("    %s – %s  (%s)\n",
 			sl.Start.Format("15:04"),
 			sl.End.Format("15:04"),
-			formatDur(sl.Duration),
+			models.FormatDuration(sl.Duration),
 		))
 	}
 	return b.String()
@@ -1456,21 +1456,15 @@ func syncCmd(weekOffset, days int) tea.Cmd {
 	return func() tea.Msg {
 		from := weekStart(weekOffset)
 		to := from.AddDate(0, 0, days)
-		events, err := calendar.FetchEvents(from, to)
-		if err != nil {
-			return syncDoneMsg{err: err}
-		}
 		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {
 			return syncDoneMsg{err: err}
 		}
 		defer s.Close()
 		ctx := context.Background()
-		_ = s.DeleteBySource(ctx, "apple", from, to)
-		for i := range events {
-			_ = s.UpsertEvent(ctx, &events[i])
+		if _, err := calendar.Sync(ctx, s, from, to); err != nil {
+			return syncDoneMsg{err: err}
 		}
-		_ = s.ReconcileEchoes(ctx, events, from, to)
 		stored, err := s.ListEvents(ctx, from, to)
 		return syncDoneMsg{events: stored, err: err}
 	}
@@ -1502,7 +1496,7 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 		if err != nil {
 			return eventCreatedMsg{err: fmt.Errorf("invalid date/time: %w", err)}
 		}
-		dur, err := parseDuration(durStr)
+		dur, err := models.ParseDuration(durStr)
 		if err != nil {
 			return eventCreatedMsg{err: err}
 		}
@@ -1713,33 +1707,6 @@ func removeByID(events []models.Event, id string) []models.Event {
 	return out
 }
 
-// parseDuration parses "1h", "30min", "90m", "1h30m", "60" (bare number = minutes).
-func parseDuration(s string) (time.Duration, error) {
-	if s == "" {
-		return 60 * time.Minute, nil
-	}
-	s2 := strings.ToLower(strings.TrimSpace(s))
-	// bare number → minutes
-	if d, err := fmt.Sscanf(s2, "%d", new(int)); d == 1 && err == nil {
-		var n int
-		fmt.Sscanf(s2, "%d", &n)
-		return time.Duration(n) * time.Minute, nil
-	}
-	// "Xmin"
-	if strings.HasSuffix(s2, "min") {
-		var n int
-		if _, err := fmt.Sscanf(strings.TrimSuffix(s2, "min"), "%d", &n); err == nil {
-			return time.Duration(n) * time.Minute, nil
-		}
-	}
-	// Go duration ("1h", "30m", "1h30m")
-	d, err := time.ParseDuration(s2)
-	if err != nil {
-		return 0, fmt.Errorf("invalid duration %q (use 1h, 30min, 1h30m, 90)", s)
-	}
-	return d, nil
-}
-
 func weekStart(offset int) time.Time {
 	now := startOfDay(time.Now())
 	wd := int(now.Weekday())
@@ -1852,18 +1819,6 @@ func wordWrap(s string, width int) string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func formatDur(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
 }
 
 // key renders a footer key-hint in the suite-wide "key:label" format —

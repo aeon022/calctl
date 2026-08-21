@@ -91,7 +91,7 @@ Example frontmatter:
 				fmt.Printf("  [dry-run] %s  %s %s  [%s]\n",
 					event.StartTime.Format("2006-01-02 15:04"),
 					event.Title,
-					durationStr(event),
+					models.FormatDuration(event.EndTime.Sub(event.StartTime)),
 					event.Calendar,
 				)
 				imported++
@@ -171,19 +171,6 @@ func collectMarkdownFiles(path string) ([]string, error) {
 		}
 	}
 	return files, nil
-}
-
-func durationStr(e *models.Event) string {
-	d := e.EndTime.Sub(e.StartTime)
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
 }
 
 func init() {

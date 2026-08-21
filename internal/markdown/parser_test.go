@@ -113,16 +113,16 @@ func TestParseDuration(t *testing.T) {
 		{"1h30m", 90 * time.Minute},
 	}
 	for _, c := range cases {
-		got, err := parseDuration(c.in)
+		got, err := models.ParseDuration(c.in)
 		if err != nil {
-			t.Errorf("parseDuration(%q): %v", c.in, err)
+			t.Errorf("ParseDuration(%q): %v", c.in, err)
 			continue
 		}
 		if got != c.want {
-			t.Errorf("parseDuration(%q) = %v, want %v", c.in, got, c.want)
+			t.Errorf("ParseDuration(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
-	if _, err := parseDuration("banana"); err == nil {
+	if _, err := models.ParseDuration("banana"); err == nil {
 		t.Error("want error for invalid duration")
 	}
 }

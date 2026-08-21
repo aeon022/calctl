@@ -183,11 +183,6 @@ func handleSync(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult
 	from := startOfDay(time.Now())
 	to := from.AddDate(0, 0, days)
 
-	events, err := calendar.FetchEvents(from, to)
-	if err != nil {
-		return mcp.NewToolResultError("sync failed: " + err.Error()), nil
-	}
-
 	s, err := store.New(config.DBPath(), config.Shared())
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -195,11 +190,10 @@ func handleSync(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult
 	defer s.Close()
 
 	ctx := context.Background()
-	_ = s.DeleteBySource(ctx, "apple", from, to)
-	for i := range events {
-		_ = s.UpsertEvent(ctx, &events[i])
+	events, err := calendar.Sync(ctx, s, from, to)
+	if err != nil {
+		return mcp.NewToolResultError("sync failed: " + err.Error()), nil
 	}
-	_ = s.ReconcileEchoes(ctx, events, from, to)
 
 	return mcp.NewToolResultText(fmt.Sprintf("Synced %d events (%s → %s).",
 		len(events),
@@ -251,7 +245,7 @@ func handleFreeSlots(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolR
 		fmt.Fprintf(&b, "  %s – %s  (%s)\n",
 			sl.Start.Format("15:04"),
 			sl.End.Format("15:04"),
-			fmtDur(sl.Duration),
+			models.FormatDuration(sl.Duration),
 		)
 	}
 	return mcp.NewToolResultText(b.String()), nil
@@ -447,18 +441,6 @@ func thisWeekRange() (time.Time, time.Time) {
 	monday := now.AddDate(0, 0, -(wd - 1))
 	sunday := monday.AddDate(0, 0, 6)
 	return monday, endOfDay(sunday)
-}
-
-func fmtDur(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
 }
 
 func calendarSuffix(cal string) string {

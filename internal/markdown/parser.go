@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -74,7 +73,7 @@ func ToEvent(imp *models.EventImport) (*models.Event, error) {
 		}
 	}
 
-	dur, err := parseDuration(imp.Duration)
+	dur, err := models.ParseDuration(imp.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("parse duration %q: %w", imp.Duration, err)
 	}
@@ -102,27 +101,4 @@ func ToEvent(imp *models.EventImport) (*models.Event, error) {
 	}
 
 	return e, nil
-}
-
-// parseDuration understands "60min", "1h30m", "90", "1.5h"
-func parseDuration(s string) (time.Duration, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, nil
-	}
-
-	// bare number → minutes
-	if n, err := strconv.Atoi(s); err == nil {
-		return time.Duration(n) * time.Minute, nil
-	}
-
-	// "90min" or "90m"
-	s = strings.ReplaceAll(s, "min", "m")
-
-	// standard Go duration: "1h30m", "90m"
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("unrecognized duration format (use e.g. 60, 60min, 1h30m)")
-	}
-	return d, nil
 }

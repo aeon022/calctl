@@ -1,6 +1,11 @@
 package models
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // Event represents a single calendar event.
 type Event struct {
@@ -57,6 +62,43 @@ type FreeSlot struct {
 	End      time.Time     `json:"end"`
 	Duration time.Duration `json:"duration_minutes"`
 	Date     string        `json:"date"`
+}
+
+// ParseDuration parses common duration shorthand: a bare number (minutes,
+// e.g. "90"), "60min", or a standard Go duration ("1h30m", "90m", "1h").
+// Empty input returns a zero duration with no error — callers that need a
+// default apply it themselves.
+func ParseDuration(s string) (time.Duration, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return 0, nil
+	}
+	// bare number → minutes
+	if n, err := strconv.Atoi(s); err == nil {
+		return time.Duration(n) * time.Minute, nil
+	}
+	// "90min" → "90m", a valid Go duration unit
+	s = strings.ReplaceAll(s, "min", "m")
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("unrecognized duration format (use e.g. 60, 60min, 1h30m)")
+	}
+	return d, nil
+}
+
+// FormatDuration renders d as compact "Xh Ym" text: "1h30m", "1h05m", "1h",
+// "45m". Hours are dropped when zero; minutes are zero-padded when hours
+// are shown.
+func FormatDuration(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 && m > 0 {
+		return fmt.Sprintf("%dh%02dm", h, m)
+	}
+	if h > 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
 }
 
 // EventImport is the Markdown frontmatter schema for calctl import.

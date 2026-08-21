@@ -81,7 +81,7 @@ var summarizeCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Meeting Summary: %s\n", event.Title)
-		fmt.Println(repeatChar("─", 60))
+		fmt.Println(strings.Repeat("─", 60))
 		fmt.Println(summary)
 		fmt.Println()
 

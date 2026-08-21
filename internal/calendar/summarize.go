@@ -23,20 +23,10 @@ func Summarize(ctx context.Context, event *models.Event) (string, error) {
 	if event.AllDay {
 		parts = append(parts, "Time: All day")
 	} else {
-		dur := event.Duration()
-		h := int(dur.Hours())
-		m := int(dur.Minutes()) % 60
-		durStr := ""
-		if h > 0 {
-			durStr = fmt.Sprintf("%dh", h)
-		}
-		if m > 0 {
-			durStr += fmt.Sprintf("%dm", m)
-		}
 		parts = append(parts, fmt.Sprintf("Time: %s – %s (%s)",
 			event.StartTime.Format("15:04"),
 			event.EndTime.Format("15:04"),
-			durStr,
+			models.FormatDuration(event.Duration()),
 		))
 	}
 
