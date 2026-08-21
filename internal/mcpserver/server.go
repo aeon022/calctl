@@ -11,6 +11,7 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/aeon022/missionctl-core/dateutil"
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -417,31 +418,23 @@ func renderEvents(events []models.Event, from, to time.Time) string {
 	return string(b)
 }
 
+// parseDate rejects an empty date string, unlike dateutil.ParseDateArg
+// (which defaults empty to now) — every caller here treats "from"/"to" as
+// effectively required once GetString's own default kicks in, and quietly
+// defaulting an empty one to today would change what an already-published
+// tool call returns for a missing argument.
 func parseDate(s string) (time.Time, error) {
 	if s == "" {
 		return time.Time{}, fmt.Errorf("empty date")
 	}
-	return time.ParseInLocation("2006-01-02", s, time.Local)
+	return dateutil.ParseDateArg(s)
 }
 
-func startOfDay(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
-}
+func startOfDay(t time.Time) time.Time { return dateutil.StartOfDay(t) }
 
-func endOfDay(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, t.Location())
-}
+func endOfDay(t time.Time) time.Time { return dateutil.EndOfDay(t) }
 
-func thisWeekRange() (time.Time, time.Time) {
-	now := startOfDay(time.Now())
-	wd := int(now.Weekday())
-	if wd == 0 {
-		wd = 7
-	}
-	monday := now.AddDate(0, 0, -(wd - 1))
-	sunday := monday.AddDate(0, 0, 6)
-	return monday, endOfDay(sunday)
-}
+func thisWeekRange() (time.Time, time.Time) { return dateutil.WeekRange(time.Now()) }
 
 func calendarSuffix(cal string) string {
 	if cal == "" {
