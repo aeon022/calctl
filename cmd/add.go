@@ -11,6 +11,7 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/aeon022/missionctl-core/dateutil"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -48,14 +49,12 @@ manually in Calendar.app.`,
 
 		// parse date
 		loc := time.Local
-		dateStr := addDate
-		if dateStr == "" {
-			dateStr = time.Now().Format("2006-01-02")
-		}
-		day, err := time.ParseInLocation("2006-01-02", dateStr, loc)
+		day, err := dateutil.ParseDateArg(addDate)
 		if err != nil {
-			return fmt.Errorf("invalid --date %q (use YYYY-MM-DD)", dateStr)
+			return fmt.Errorf("invalid --date %q (use YYYY-MM-DD)", addDate)
 		}
+		day = dateutil.StartOfDay(day)
+		dateStr := day.Format("2006-01-02")
 
 		var start, end time.Time
 		if addAllDay {
@@ -88,7 +87,7 @@ manually in Calendar.app.`,
 			calName = config.Active.DefaultCalendar
 		}
 
-		recurrence, err := buildRecurrenceRule(addRepeat, addCount, addUntil, loc)
+		recurrence, err := buildRecurrenceRule(addRepeat, addCount, addUntil)
 		if err != nil {
 			return err
 		}
@@ -166,7 +165,7 @@ manually in Calendar.app.`,
 // buildRecurrenceRule translates the friendly --repeat/--count/--until flags
 // into an iCalendar RRULE string (empty if --repeat wasn't given). --count
 // and --until are mutually exclusive, matching RRULE's own COUNT/UNTIL.
-func buildRecurrenceRule(repeat string, count int, until string, loc *time.Location) (string, error) {
+func buildRecurrenceRule(repeat string, count int, until string) (string, error) {
 	if repeat == "" {
 		return "", nil
 	}
@@ -190,7 +189,7 @@ func buildRecurrenceRule(repeat string, count int, until string, loc *time.Locat
 	if count > 0 {
 		rule += fmt.Sprintf(";COUNT=%d", count)
 	} else if until != "" {
-		untilDate, err := time.ParseInLocation("2006-01-02", until, loc)
+		untilDate, err := dateutil.ParseDateArg(until)
 		if err != nil {
 			return "", fmt.Errorf("invalid --until %q (use YYYY-MM-DD)", until)
 		}

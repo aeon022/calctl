@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/aeon022/calctl/internal/calendar"
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/aeon022/missionctl-core/dateutil"
 	"github.com/spf13/cobra"
 )
 
@@ -30,19 +30,13 @@ var summarizeCmd = &cobra.Command{
 		emailFlag, _ := cmd.Flags().GetBool("email")
 
 		// Resolve the date
-		var day time.Time
-		if dateStr != "" {
-			var err error
-			day, err = time.ParseInLocation("2006-01-02", dateStr, time.Local)
-			if err != nil {
-				return fmt.Errorf("invalid --date %q: %w", dateStr, err)
-			}
-		} else {
-			now := time.Now()
-			day = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		day, err := dateutil.ParseDateArg(dateStr)
+		if err != nil {
+			return fmt.Errorf("invalid --date %q: %w", dateStr, err)
 		}
+		day = dateutil.StartOfDay(day)
 		from := day
-		to := day.Add(24*time.Hour - time.Second)
+		to := dateutil.EndOfDay(day)
 
 		ctx := context.Background()
 		s, err := store.New(config.DBPath(), config.Shared())

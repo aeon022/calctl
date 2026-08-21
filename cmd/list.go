@@ -10,6 +10,7 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/aeon022/missionctl-core/dateutil"
 	"github.com/spf13/cobra"
 )
 
@@ -110,33 +111,26 @@ func printEvents(events []models.Event, from, to time.Time) {
 
 func resolveRange(today, week bool, fromStr, toStr string) (time.Time, time.Time, error) {
 	now := time.Now()
-	loc := now.Location()
-	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 
 	switch {
 	case today:
-		return dayStart, dayStart.Add(24*time.Hour - time.Second), nil
+		return dateutil.StartOfDay(now), dateutil.EndOfDay(now), nil
 	case week:
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		monday := dayStart.AddDate(0, 0, -(weekday - 1))
-		sunday := monday.AddDate(0, 0, 6).Add(24*time.Hour - time.Second)
-		return monday, sunday, nil
+		mon, sun := dateutil.WeekRange(now)
+		return mon, sun, nil
 	case fromStr != "" && toStr != "":
-		from, err := time.ParseInLocation("2006-01-02", fromStr, loc)
+		from, err := dateutil.ParseDateArg(fromStr)
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("parse --from: %w", err)
 		}
-		to, err := time.ParseInLocation("2006-01-02", toStr, loc)
+		to, err := dateutil.ParseDateArg(toStr)
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("parse --to: %w", err)
 		}
-		return from, to.Add(24*time.Hour - time.Second), nil
+		return from, dateutil.EndOfDay(to), nil
 	default:
 		// default: today
-		return dayStart, dayStart.Add(24*time.Hour - time.Second), nil
+		return dateutil.StartOfDay(now), dateutil.EndOfDay(now), nil
 	}
 }
 

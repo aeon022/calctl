@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aeon022/calctl/internal/models"
+	"github.com/aeon022/missionctl-core/dateutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -59,7 +60,7 @@ func ToEvent(imp *models.EventImport) (*models.Event, error) {
 	var err error
 
 	if imp.AllDay {
-		startTime, err = time.ParseInLocation("2006-01-02", imp.Date, loc)
+		startTime, err = dateutil.ParseDateArg(imp.Date)
 		if err != nil {
 			return nil, fmt.Errorf("parse date %q: %w", imp.Date, err)
 		}
