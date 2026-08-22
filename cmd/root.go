@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/aeon022/calctl/internal/config"
@@ -48,12 +49,18 @@ func init() {
 
 // outputJSON is a helper used by all commands for JSON output.
 func outputJSON(v any) {
+	outputJSONTo(os.Stdout, v)
+}
+
+// outputJSONTo is like outputJSON but writes to an arbitrary writer (e.g. a
+// file for `calctl export --output`).
+func outputJSONTo(w io.Writer, v any) {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "json marshal error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println(string(b))
+	fmt.Fprintln(w, string(b))
 }
 
 func isJSON() bool { return formatFlag == "json" }

@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -80,8 +82,14 @@ type listResponse struct {
 }
 
 func printEvents(events []models.Event, from, to time.Time) {
+	printEventsTo(os.Stdout, events, from, to)
+}
+
+// printEventsTo is like printEvents but writes to an arbitrary writer (e.g. a
+// file for `calctl export --output`).
+func printEventsTo(w io.Writer, events []models.Event, from, to time.Time) {
 	if len(events) == 0 {
-		fmt.Printf("No events between %s and %s.\n", from.Format("Mon Jan 2"), to.Format("Mon Jan 2"))
+		fmt.Fprintf(w, "No events between %s and %s.\n", from.Format("Mon Jan 2"), to.Format("Mon Jan 2"))
 		return
 	}
 
@@ -89,24 +97,24 @@ func printEvents(events []models.Event, from, to time.Time) {
 	for _, e := range events {
 		date := e.StartTime.Format("Mon, Jan 02")
 		if date != lastDate {
-			fmt.Printf("\n%s\n", date)
-			fmt.Println(strings.Repeat("─", 40))
+			fmt.Fprintf(w, "\n%s\n", date)
+			fmt.Fprintln(w, strings.Repeat("─", 40))
 			lastDate = date
 		}
 		timeStr := e.StartTime.Format("15:04") + "–" + e.EndTime.Format("15:04")
 		if e.AllDay {
 			timeStr = "all day"
 		}
-		fmt.Printf("  %s  %s", timeStr, e.Title)
+		fmt.Fprintf(w, "  %s  %s", timeStr, e.Title)
 		if e.Calendar != "" {
-			fmt.Printf("  [%s]", e.Calendar)
+			fmt.Fprintf(w, "  [%s]", e.Calendar)
 		}
-		fmt.Println()
+		fmt.Fprintln(w)
 		if e.Location != "" && e.Location != "missing value" {
-			fmt.Printf("    @ %s\n", e.Location)
+			fmt.Fprintf(w, "    @ %s\n", e.Location)
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 }
 
 func resolveRange(today, week bool, fromStr, toStr string) (time.Time, time.Time, error) {
