@@ -1174,6 +1174,7 @@ func (m Model) renderCreate() string {
 	}
 
 	b.WriteString(styleFormBox.Render(inner.String()))
+	m.padToStatusBar(&b)
 	return b.String()
 }
 
@@ -1216,7 +1217,11 @@ func (m Model) renderDetail() string {
 	if e.Notes != "" {
 		b.WriteString("\n" + wordWrap(e.Notes, m.width-4) + "\n")
 	}
-	return styleDetail.Render(b.String())
+	rendered := styleDetail.Render(b.String())
+	var out strings.Builder
+	out.WriteString(rendered)
+	m.padToStatusBar(&out)
+	return out.String()
 }
 
 func (m Model) renderFree() string {
@@ -1240,6 +1245,7 @@ func (m Model) renderFree() string {
 	b.WriteString("\n  " + styleHeader.Render("Free Slots") + "\n\n")
 	if len(slots) == 0 {
 		b.WriteString(styleEmpty.Render("  No free slots found.") + "\n")
+		m.padToStatusBar(&b)
 		return b.String()
 	}
 	var lastDate string
@@ -1254,7 +1260,22 @@ func (m Model) renderFree() string {
 			models.FormatDuration(sl.Duration),
 		))
 	}
+	m.padToStatusBar(&b)
 	return b.String()
+}
+
+// padToStatusBar pins assembleFrame's trailing status bar to the bottom of
+// the terminal instead of letting it glue itself right under a short view —
+// pads with blank lines up to the same content budget renderList already
+// uses (m.height - 6: header + week-nav + divider above, status bar below).
+func (m Model) padToStatusBar(b *strings.Builder) {
+	if m.height <= 0 {
+		return
+	}
+	contentHeight := m.height - 6
+	for used := strings.Count(b.String(), "\n"); used < contentHeight; used++ {
+		b.WriteString("\n")
+	}
 }
 
 func (m Model) renderStatusBar() string {
