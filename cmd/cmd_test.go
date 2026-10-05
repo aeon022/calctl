@@ -381,3 +381,22 @@ func TestFormatSlotsAndLabel(t *testing.T) {
 		t.Errorf("label = %q", formatDateLabel(s))
 	}
 }
+
+func TestWriteDraftFileUsesFreshPrivateFile(t *testing.T) {
+	e := &models.Event{Title: "Standup"}
+	a, err := writeDraftFile(e, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := writeDraftFile(e, "y")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(a); os.Remove(b) })
+	if a == b {
+		t.Errorf("same title must not reuse a predictable path: %s", a)
+	}
+	if fi, _ := os.Stat(a); fi == nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("draft must be 0600, got %v", fi)
+	}
+}

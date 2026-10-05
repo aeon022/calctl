@@ -141,7 +141,8 @@ func findBestMatch(events []models.Event, query string) *models.Event {
 	return &events[0]
 }
 
-// writeDraftFile writes a mailctl-compatible Markdown draft file to /tmp and returns its path.
+// writeDraftFile writes a mailctl-compatible Markdown draft file to a fresh,
+// unpredictably named temp file (0600) and returns its path.
 func writeDraftFile(event *models.Event, summary string) (string, error) {
 	safeTitle := strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -149,7 +150,9 @@ func writeDraftFile(event *models.Event, summary string) (string, error) {
 		}
 		return '-'
 	}, event.Title)
-	path := fmt.Sprintf("/tmp/calctl-summary-%s.md", safeTitle)
+	if r := []rune(safeTitle); len(r) > 40 {
+		safeTitle = string(r[:40])
+	}
 
 	var toLines []string
 	for _, a := range event.Attendees {
@@ -160,10 +163,15 @@ func writeDraftFile(event *models.Event, summary string) (string, error) {
 	content := fmt.Sprintf("---\nto:\n%s\nsubject: %s\n---\n\n%s\n",
 		strings.Join(toLines, "\n"), strconv.Quote("Meeting Summary: "+event.Title), summary)
 
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+	f, err := os.CreateTemp("", "calctl-summary-"+safeTitle+"-*.md")
+	if err != nil {
 		return "", err
 	}
-	return path, nil
+	defer f.Close()
+	if _, err := f.WriteString(content); err != nil {
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 func init() {

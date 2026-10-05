@@ -97,7 +97,6 @@ func Load() error {
 
 	settings.SetEnvPrefix("CALCTL")
 	settings.AddPath(dir)
-	settings.AddPath(".")
 
 	settings.SetDefault("default_calendar", "")
 	settings.SetDefault("working_hours_from", "09:00")
