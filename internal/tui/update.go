@@ -14,6 +14,13 @@ import (
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
+// browsing reports whether the user is just looking at the event list: no
+// form, popup, search, palette or delete confirm, and nothing in flight.
+func (m Model) browsing() bool {
+	return m.view == viewList && !m.loading && !m.syncing && !m.focusLoading &&
+		!m.searching && !m.inPalette && m.deleteTarget == nil
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -29,7 +36,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.height = 1
 		}
 
+	case tea.FocusMsg:
+		// Back from another window (e.g. Calendar.app): reload stale events,
+		// but only while just browsing — never under a form, search, palette,
+		// confirm or popup.
+		if m.browsing() && time.Since(m.lastLoad) > 5*time.Second {
+			m.focusLoading = true
+			return m, loadEvents(m.weekOffset, m.daysAhead)
+		}
+		return m, nil
+
 	case eventsLoadedMsg:
+		keepID := ""
+		if m.focusLoading && m.cursor >= 0 && m.cursor < len(m.rows) && m.rows[m.cursor].event != nil {
+			keepID = m.rows[m.cursor].event.ID
+		}
+		m.focusLoading = false
+		m.lastLoad = time.Now()
 		m.loading = false
 		m.events = msg.events
 		m.rows = buildRows(msg.events, m.weekOffset, m.daysAhead, m.searchQ)
@@ -43,6 +66,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = i
 					break
 				}
+			}
+		}
+		for i, r := range m.rows {
+			if keepID != "" && r.event != nil && r.event.ID == keepID {
+				m.cursor = i
+				break
 			}
 		}
 

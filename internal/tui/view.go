@@ -43,6 +43,7 @@ func (m Model) View() tea.View {
 	// v2: AltScreen/MouseMode are per-View fields, not Program options.
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeAllMotion
+	v.ReportFocus = true // FocusMsg → reload stale events when the window regains focus
 	return v
 }
 

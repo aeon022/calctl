@@ -238,13 +238,13 @@ func undoDeleteEventCmd(e *models.Event) tea.Cmd {
 	}
 }
 
-// copyToClipboardCmd shells out to pbcopy — same approach taskctl/mailctl/
-// notectl use for their own "y" copy shortcuts, no clipboard library needed.
+// copyToClipboardCmd copies via OSC 52 (works over SSH/tmux) and also shells
+// out to pbcopy, which Terminal.app needs since it ignores OSC 52.
 func copyToClipboardCmd(text string) tea.Cmd {
-	return func() tea.Msg {
+	return tea.Batch(tea.SetClipboard(text), func() tea.Msg {
 		cmd := exec.Command("pbcopy")
 		cmd.Stdin = strings.NewReader(text)
 		_ = cmd.Run()
 		return nil
-	}
+	})
 }

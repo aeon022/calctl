@@ -72,6 +72,8 @@ type Model struct {
 	view         view
 	loading      bool
 	syncing      bool
+	lastLoad     time.Time // when events last arrived; FocusMsg reloads only if stale
+	focusLoading bool      // a focus-triggered reload is in flight (keeps cursor on the same event)
 	lastSynced   time.Time // zero = never synced this install; shown in the header when idle
 	sp           spinner.Model
 	err          error
