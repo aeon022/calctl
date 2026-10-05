@@ -13,10 +13,12 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/calctl/internal/store"
+	"github.com/aeon022/missionctl-core/emptystate"
 	"github.com/aeon022/missionctl-core/humanize"
 	"github.com/aeon022/missionctl-core/keymap"
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/palette"
+	"github.com/aeon022/missionctl-core/statusbar"
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -64,10 +66,10 @@ func (m Model) viewContent() string {
 		// the correct background to keep visible behind the popup. No
 		// enclosing border around the whole frame, so inset 0 is safe.
 		bg := m.assembleFrame(m.renderList())
-		return overlay.Center(bg, m.renderHelpPopup(), m.width, m.height, 0)
+		return overlay.CenterDim(bg, m.renderHelpPopup(), m.width, m.height, 0)
 	case viewCalendarPicker:
 		bg := m.assembleFrame(m.renderList())
-		return overlay.Center(bg, m.renderCalendarPicker(), m.width, m.height, 0)
+		return overlay.CenterDim(bg, m.renderCalendarPicker(), m.width, m.height, 0)
 	default:
 		return m.assembleFrame(m.renderList())
 	}
@@ -134,23 +136,12 @@ func (m Model) renderHeader() string {
 	} else if !m.lastSynced.IsZero() {
 		right = styleCal.Render("synced " + humanize.TimeAgo(m.lastSynced))
 	}
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 0 {
-		// No room left for right (sync time, status, etc.) — drop it
-		// instead of appending it anyway with zero padding, which would
-		// silently push the line past m.width.
-		right = ""
-		gap = m.width - lipgloss.Width(left)
-		if gap < 0 {
-			gap = 0
-		}
-	}
-	return left + strings.Repeat(" ", gap) + right
+	return statusbar.Line(m.width, left, right)
 }
 
 func (m Model) renderList() string {
 	if m.loading {
-		return "\n  " + m.sp.View() + styleLoading.Render(" Loading events…") + "\n"
+		return emptystate.Loading(m.width, max(m.height-6, 1), m.sp.View(), "Loading events…")
 	}
 
 	var b strings.Builder
@@ -238,11 +229,15 @@ func (m Model) renderList() string {
 	}
 
 	if len(visibleRows) == 0 {
+		var title, hint string
 		switch {
 		case m.searchQ != "":
-			b.WriteString("  " + styleCal.Render("No events match your search.") + "\n")
+			title = "No events match your search"
 		case len(m.rows) == 0:
-			b.WriteString("  " + styleCal.Render("No events yet — press s to sync from Apple Calendar, or calctl import to add one.") + "\n")
+			title, hint = "No events yet", "press s to sync from Apple Calendar, or calctl import to add one"
+		}
+		if title != "" {
+			b.WriteString(emptystate.Render(m.width, max(contentHeight-1, 1), "", title, hint) + "\n")
 		}
 	}
 
@@ -416,38 +411,23 @@ func (m Model) padToStatusBar(b *strings.Builder) {
 }
 
 func (m Model) renderStatusBar() string {
+	hints := func(pairs ...[2]string) string { return statusbar.Hints(m.width, pairs...) }
 	if m.view == viewCreate {
-		return styleStatusBar.Render(
-			key("tab") + "next field  " +
-				key("enter") + "next / save  " +
-				key("ctrl+s") + "save  " +
-				key("esc") + "cancel",
-		)
+		return hints([2]string{"tab", "next field"}, [2]string{"enter", "next / save"},
+			[2]string{"ctrl+s", "save"}, [2]string{"esc", "cancel"})
 	}
 	if m.view == viewDetail || m.view == viewFree {
-		return styleStatusBar.Render(key("esc") + "back  " + key("q") + "quit")
+		return hints([2]string{"esc", "back"}, [2]string{"q", "quit"})
 	}
 	if m.deleteTarget != nil {
 		return styleDeleteConfirm.Render(
 			fmt.Sprintf("  Delete %q?  ", m.deleteTarget.Title),
-		) + styleStatusBar.Render(key("y")+"confirm  "+key("any")+"cancel")
+		) + statusbar.Hint("y", "confirm") + "  " + statusbar.Hint("any", "cancel")
 	}
-	return styleStatusBar.Render(
-		key("↑↓") + "navigate  " +
-			key("←→") + "week  " +
-			key("enter") + "detail  " +
-			key("n") + "new  " +
-			key("e") + "edit  " +
-			key("d") + "delete  " +
-			key("u") + "undo  " +
-			key("y") + "copy  " +
-			key("/") + "filter  " +
-			key("s") + "sync  " +
-			key("f") + "free  " +
-			key("+/-") + fmt.Sprintf("%dd", m.daysAhead) + "  " +
-			key("?") + "help  " +
-			key("q") + "quit",
-	)
+	return hints([2]string{"↑↓", "navigate"}, [2]string{"enter", "detail"}, [2]string{"n", "new"},
+		[2]string{"e", "edit"}, [2]string{"d", "delete"}, [2]string{"s", "sync"}, [2]string{"/", "filter"},
+		[2]string{"←→", "week"}, [2]string{"u", "undo"}, [2]string{"y", "copy"}, [2]string{"f", "free"},
+		[2]string{"+/-", fmt.Sprintf("%dd", m.daysAhead)}, [2]string{"?", "help"}, [2]string{"q", "quit"})
 }
 
 func (m Model) visibleRows(height int) []row {

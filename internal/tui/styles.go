@@ -74,10 +74,6 @@ var (
 	styleStatusBar = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
-	styleStatusKey = lipgloss.NewStyle().
-			Foreground(colorBlue).
-			Bold(true)
-
 	// Solid badge, not just colored text — plain foreground-only red in the
 	// header's top-right corner (e.g. a delete's "no matching event found")
 	// was easy to miss entirely against everything else competing for that

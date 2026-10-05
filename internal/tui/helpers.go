@@ -189,12 +189,6 @@ func wordWrap(s string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// key renders a footer key-hint in the suite-wide "key:label" format —
-// callers append the label text (no leading space) right after this call.
-func key(k string) string {
-	return styleStatusKey.Render(k + ":")
-}
-
 // motionThrottleFilter drops MouseMotionMsg messages arriving <16ms apart.
 func motionThrottleFilter() func(tea.Model, tea.Msg) tea.Msg {
 	var lastMotion time.Time
