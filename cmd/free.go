@@ -90,15 +90,15 @@ var freeCmd = &cobra.Command{
 }
 
 type freeResponse struct {
-	Tool        string         `json:"tool"`
-	Command     string         `json:"command"`
-	From        string         `json:"from"`
-	To          string         `json:"to"`
-	MinMinutes  int            `json:"min_minutes"`
-	WorkingFrom string         `json:"working_from"`
-	WorkingTo   string         `json:"working_to"`
-	Count       int            `json:"count"`
-	Data        []slotJSON     `json:"data"`
+	Tool        string     `json:"tool"`
+	Command     string     `json:"command"`
+	From        string     `json:"from"`
+	To          string     `json:"to"`
+	MinMinutes  int        `json:"min_minutes"`
+	WorkingFrom string     `json:"working_from"`
+	WorkingTo   string     `json:"working_to"`
+	Count       int        `json:"count"`
+	Data        []slotJSON `json:"data"`
 }
 
 type slotJSON struct {

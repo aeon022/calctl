@@ -41,11 +41,11 @@ var syncCmd = &cobra.Command{
 
 		if isJSON() {
 			outputJSON(map[string]any{
-				"ok":    true,
+				"ok":     true,
 				"synced": len(events),
-				"days":  syncDays,
-				"from":  from.Format("2006-01-02"),
-				"to":    to.Format("2006-01-02"),
+				"days":   syncDays,
+				"from":   from.Format("2006-01-02"),
+				"to":     to.Format("2006-01-02"),
 			})
 		} else {
 			fmt.Printf("Synced %d events (%s → %s)\n",
@@ -59,4 +59,3 @@ func init() {
 	syncCmd.Flags().IntVar(&syncDays, "days", 30, "Number of days to sync ahead")
 	rootCmd.AddCommand(syncCmd)
 }
-

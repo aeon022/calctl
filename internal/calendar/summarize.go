@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	coreai "github.com/aeon022/missionctl-core/ai"
 	"github.com/aeon022/calctl/internal/models"
+	coreai "github.com/aeon022/missionctl-core/ai"
 )
 
 const summarizeSystemPrompt = "You are a professional meeting assistant."

@@ -17,11 +17,11 @@ import (
 )
 
 var (
-	listToday  bool
-	listWeek   bool
-	listFrom   string
-	listTo     string
-	listSync   bool
+	listToday bool
+	listWeek  bool
+	listFrom  string
+	listTo    string
+	listSync  bool
 )
 
 var listCmd = &cobra.Command{
