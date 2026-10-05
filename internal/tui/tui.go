@@ -1096,7 +1096,7 @@ func (m Model) renderList() string {
 		// background when selected: each segment (leading space, per-
 		// character-highlighted title, trailing space) is self-contained.
 		matchIdx := fuzzyMatchIndexes(m.searchQ, e.Title)
-		titleRendered := titleStyle.Render(" ") + highlightMatches(truncate(e.Title, m.width-30), matchIdx, titleStyle) + titleStyle.Render(" ")
+		titleRendered := titleStyle.Render(" ") + highlightMatches(humanize.Truncate(e.Title, m.width-30), matchIdx, titleStyle) + titleStyle.Render(" ")
 		b.WriteString("  " + timeStr + " " + titleRendered + calLabel + "\n")
 	}
 
@@ -1811,13 +1811,6 @@ func highlightMatches(s string, idxs []int, base lipgloss.Style) string {
 		}
 	}
 	return b.String()
-}
-
-func truncate(s string, max int) string {
-	if len([]rune(s)) <= max {
-		return s
-	}
-	return string([]rune(s)[:max-1]) + "…"
 }
 
 func wordWrap(s string, width int) string {
