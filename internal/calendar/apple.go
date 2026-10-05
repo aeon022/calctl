@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"fmt"
+	"github.com/aeon022/missionctl-core/applescript"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -153,7 +154,7 @@ func CreateEvent(e *models.Event) error {
 		return fmt.Errorf("no calendar specified — pass --cal <name>, or set default_calendar in the calctl config; run `calctl calendars` to see available names")
 	}
 	script := buildCreateScript(e)
-	_, err := runAppleScript(script)
+	_, err := applescript.Run(script)
 	return err
 }
 
@@ -180,7 +181,7 @@ func CreateEvent(e *models.Event) error {
 // Calendar.app if this function reports success but the event persists.
 func DeleteEvent(e *models.Event) error {
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
-	escapedTitle := escapeAppleScript(e.Title)
+	escapedTitle := applescript.Escape(e.Title)
 
 	script := fmt.Sprintf(`
 %s
@@ -197,7 +198,7 @@ tell application "Calendar"
 end tell
 return deletedCount as string
 `, appleScriptSetDate("targetDate", e.StartTime), escapedTitle)
-	out, err := runAppleScript(script)
+	out, err := applescript.Run(script)
 	if err != nil {
 		return err
 	}
@@ -218,7 +219,7 @@ tell application "Calendar"
 	end repeat
 	return names
 end tell`
-	out, err := runAppleScript(script)
+	out, err := applescript.Run(script)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +291,7 @@ end tell
 return output
 `, fromEpoch, toEpoch)
 
-	out, err := runAppleScript(script)
+	out, err := applescript.Run(script)
 	if err != nil {
 		return nil, fmt.Errorf("applescript: %w", err)
 	}
@@ -334,7 +335,7 @@ func CreateEvents(events []*models.Event) ([]error, error) {
 
 	script := fmt.Sprintf("set output to \"\"\n%stell application \"Calendar\" to reload calendars\nreturn output", b.String())
 
-	out, err := runAppleScript(script)
+	out, err := applescript.Run(script)
 	if err != nil {
 		return nil, err
 	}
@@ -363,11 +364,11 @@ func buildCreateScriptIndexed(e *models.Event, idx int) string {
 
 	locationLine := ""
 	if e.Location != "" {
-		locationLine = fmt.Sprintf(`set location of newEvent%d to "%s"`, idx, escapeAppleScript(e.Location))
+		locationLine = fmt.Sprintf(`set location of newEvent%d to "%s"`, idx, applescript.Escape(e.Location))
 	}
 	notesLine := ""
 	if e.Notes != "" {
-		notesLine = fmt.Sprintf(`set description of newEvent%d to "%s"`, idx, escapeAppleScript(e.Notes))
+		notesLine = fmt.Sprintf(`set description of newEvent%d to "%s"`, idx, applescript.Escape(e.Notes))
 	}
 	allDayLine := ""
 	if e.AllDay {
@@ -375,11 +376,11 @@ func buildCreateScriptIndexed(e *models.Event, idx int) string {
 	}
 	recurrenceLine := ""
 	if e.Recurrence != "" {
-		recurrenceLine = fmt.Sprintf(`set recurrence of newEvent%d to "%s"`, idx, escapeAppleScript(e.Recurrence))
+		recurrenceLine = fmt.Sprintf(`set recurrence of newEvent%d to "%s"`, idx, applescript.Escape(e.Recurrence))
 	}
 
-	escapedCal := escapeAppleScript(calName)
-	escapedTitle := escapeAppleScript(e.Title)
+	escapedCal := applescript.Escape(calName)
+	escapedTitle := applescript.Escape(e.Title)
 	startVar := fmt.Sprintf("startDate%d", idx)
 	endVar := fmt.Sprintf("endDate%d", idx)
 	foundVar := fmt.Sprintf("foundCal%d", idx)
@@ -488,22 +489,4 @@ func parseEvents(raw string) []models.Event {
 		events = append(events, e)
 	}
 	return events
-}
-
-func runAppleScript(script string) (string, error) {
-	cmd := exec.Command("osascript", "-e", script)
-	out, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("osascript error: %s", string(exitErr.Stderr))
-		}
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func escapeAppleScript(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return s
 }
