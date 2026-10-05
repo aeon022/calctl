@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -155,8 +156,9 @@ func writeDraftFile(event *models.Event, summary string) (string, error) {
 		toLines = append(toLines, fmt.Sprintf("  - %s", a))
 	}
 
-	content := fmt.Sprintf("---\nto:\n%s\nsubject: \"Meeting Summary: %s\"\n---\n\n%s\n",
-		strings.Join(toLines, "\n"), event.Title, summary)
+	// strconv.Quote: a quote or backslash in the title must not break the YAML frontmatter
+	content := fmt.Sprintf("---\nto:\n%s\nsubject: %s\n---\n\n%s\n",
+		strings.Join(toLines, "\n"), strconv.Quote("Meeting Summary: "+event.Title), summary)
 
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		return "", err

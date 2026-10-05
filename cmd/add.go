@@ -193,7 +193,8 @@ func buildRecurrenceRule(repeat string, count int, until string) (string, error)
 		if err != nil {
 			return "", fmt.Errorf("invalid --until %q (use YYYY-MM-DD)", until)
 		}
-		rule += ";UNTIL=" + untilDate.UTC().Format("20060102T150405Z")
+		// end of that day: UNTIL at 00:00 would exclude the last day's own occurrence
+		rule += ";UNTIL=" + dateutil.EndOfDay(untilDate).UTC().Format("20060102T150405Z")
 	}
 	return rule, nil
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -20,11 +21,11 @@ func buildRows(events []models.Event, weekOffset, daysAhead int, query string) [
 
 	for d := 0; d < daysAhead; d++ {
 		day := from.AddDate(0, 0, d)
-		dayEnd := day.Add(24*time.Hour - time.Second)
+		nextDay := from.AddDate(0, 0, d+1) // not day+24h: DST days are 23 or 25 hours long
 
 		var dayEvents []models.Event
 		for _, e := range events {
-			if e.StartTime.Before(day) || e.StartTime.After(dayEnd) {
+			if e.StartTime.Before(day) || !e.StartTime.Before(nextDay) {
 				continue
 			}
 			if q != "" && !eventMatches(&e, q) {
@@ -171,7 +172,7 @@ func wordWrap(s string, width int) string {
 	var lines []string
 	line := "  "
 	for _, w := range words {
-		if len(line)+len(w)+1 > width {
+		if utf8.RuneCountInString(line)+utf8.RuneCountInString(w)+1 > width {
 			lines = append(lines, line)
 			line = "  " + w
 		} else {

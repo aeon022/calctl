@@ -53,48 +53,78 @@ func syncCmd(weekOffset, days int) tea.Cmd {
 	}
 }
 
+// eventFromForm builds the event a submitted form describes. Editing replaces
+// the event (delete + create), so fields the form has no input for — notes,
+// attendees — carry over from the original, and an all-day event whose time
+// and duration were left untouched stays all-day instead of silently becoming
+// a 1-hour 09:00 event.
+func eventFromForm(inputs [fCount]textinput.Model, editTarget *models.Event) (*models.Event, error) {
+	title := strings.TrimSpace(inputs[fTitle].Value())
+	dateStr := strings.TrimSpace(inputs[fDate].Value())
+	timeStr := strings.TrimSpace(inputs[fTime].Value())
+	durStr := strings.TrimSpace(inputs[fDuration].Value())
+	calName := strings.TrimSpace(inputs[fCalendar].Value())
+	if calName == "" {
+		calName = config.Active.DefaultCalendar
+	}
+
+	keepAllDay := editTarget != nil && editTarget.AllDay && timeStr == "" && durStr == ""
+
+	if dateStr == "" {
+		dateStr = time.Now().Format("2006-01-02")
+	}
+	if timeStr == "" {
+		timeStr = "09:00"
+		if keepAllDay {
+			timeStr = "00:00"
+		}
+	}
+	if durStr == "" {
+		durStr = "1h"
+	}
+
+	start, err := time.ParseInLocation("2006-01-02 15:04", dateStr+" "+timeStr, time.Local)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date/time: %w", err)
+	}
+	dur, err := models.ParseDuration(durStr)
+	if err != nil {
+		return nil, err
+	}
+	if dur <= 0 {
+		return nil, fmt.Errorf("duration must be positive")
+	}
+	if keepAllDay {
+		if dur = editTarget.EndTime.Sub(editTarget.StartTime); dur <= 0 {
+			dur = 24 * time.Hour
+		}
+	}
+
+	e := &models.Event{
+		ID:        "calctl-" + uuid.New().String(),
+		Title:     title,
+		StartTime: start,
+		EndTime:   start.Add(dur),
+		AllDay:    keepAllDay,
+		Calendar:  calName,
+		Location:  strings.TrimSpace(inputs[fLocation].Value()),
+		Source:    "calctl",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if editTarget != nil {
+		e.Notes, e.Attendees = editTarget.Notes, editTarget.Attendees
+	}
+	return e, nil
+}
+
 func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) tea.Cmd {
 	return func() tea.Msg {
-		title := strings.TrimSpace(inputs[fTitle].Value())
-		dateStr := strings.TrimSpace(inputs[fDate].Value())
-		timeStr := strings.TrimSpace(inputs[fTime].Value())
-		durStr := strings.TrimSpace(inputs[fDuration].Value())
-		calName := strings.TrimSpace(inputs[fCalendar].Value())
-		if calName == "" {
-			calName = config.Active.DefaultCalendar
-		}
-		loc := strings.TrimSpace(inputs[fLocation].Value())
-
-		if dateStr == "" {
-			dateStr = time.Now().Format("2006-01-02")
-		}
-		if timeStr == "" {
-			timeStr = "09:00"
-		}
-		if durStr == "" {
-			durStr = "1h"
-		}
-
-		start, err := time.ParseInLocation("2006-01-02 15:04", dateStr+" "+timeStr, time.Local)
-		if err != nil {
-			return eventCreatedMsg{err: fmt.Errorf("invalid date/time: %w", err)}
-		}
-		dur, err := models.ParseDuration(durStr)
+		e, err := eventFromForm(inputs, editTarget)
 		if err != nil {
 			return eventCreatedMsg{err: err}
 		}
-
-		e := &models.Event{
-			ID:        "calctl-" + uuid.New().String(),
-			Title:     title,
-			StartTime: start,
-			EndTime:   start.Add(dur),
-			Calendar:  calName,
-			Location:  loc,
-			Source:    "calctl",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
+		start := e.StartTime
 
 		s, err := store.New(config.DBPath(), config.Shared())
 		if err != nil {

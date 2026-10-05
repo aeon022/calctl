@@ -75,6 +75,9 @@ func ParseDuration(s string) (time.Duration, error) {
 	}
 	// bare number → minutes
 	if n, err := strconv.Atoi(s); err == nil {
+		if n < 0 {
+			return 0, fmt.Errorf("duration must not be negative")
+		}
 		return time.Duration(n) * time.Minute, nil
 	}
 	// "90min" → "90m", a valid Go duration unit
@@ -82,6 +85,9 @@ func ParseDuration(s string) (time.Duration, error) {
 	d, err := time.ParseDuration(s)
 	if err != nil {
 		return 0, fmt.Errorf("unrecognized duration format (use e.g. 60, 60min, 1h30m)")
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("duration must not be negative")
 	}
 	return d, nil
 }
