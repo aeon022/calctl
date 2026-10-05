@@ -1,23 +1,26 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	coreconfig "github.com/aeon022/missionctl-core/config"
 	"github.com/aeon022/missionctl-core/licensing"
-	"github.com/spf13/viper"
 )
 
+// settings is this tool's config store (replaces the former global viper).
+var settings = coreconfig.NewStore("config")
+
 type Config struct {
-	DefaultCalendar  string `mapstructure:"default_calendar"`
-	WorkingHoursFrom string `mapstructure:"working_hours_from"`
-	WorkingHoursTo   string `mapstructure:"working_hours_to"`
-	MinFreeSlot      int    `mapstructure:"min_free_slot_min"`
-	LicenseKey       string `mapstructure:"license_key"`
-	LicenseStatus    string `mapstructure:"license_status"`
-	LicenseBenefitID string `mapstructure:"license_benefit_id"`
+	DefaultCalendar  string `yaml:"default_calendar"`
+	WorkingHoursFrom string `yaml:"working_hours_from"`
+	WorkingHoursTo   string `yaml:"working_hours_to"`
+	MinFreeSlot      int    `yaml:"min_free_slot_min"`
+	LicenseKey       string `yaml:"license_key"`
+	LicenseStatus    string `yaml:"license_status"`
+	LicenseBenefitID string `yaml:"license_benefit_id"`
 }
 
 // bundleBenefitID and calctlBenefitID identify the missionctl Bundle's and
@@ -39,15 +42,15 @@ func IsPro() bool {
 }
 
 func PolarOrgID() string {
-	if v := viper.GetString("polar_org_id"); v != "" {
+	if v := settings.GetString("polar_org_id"); v != "" {
 		return v
 	}
 	return licensing.DefaultOrgID
 }
 
 // writeConfig resolves ~/Library/Application Support/calctl (creating it if
-// needed) and writes viper's in-memory config there as config.yaml — shared
-// by SetLicense and SetDefaultCalendar, which both just set a viper key and
+// needed) and writes config's in-memory config there as config.yaml — shared
+// by SetLicense and SetDefaultCalendar, which both just set a config key and
 // need it persisted the same way.
 func writeConfig() error {
 	dir, err := os.UserConfigDir()
@@ -58,7 +61,7 @@ func writeConfig() error {
 	if err := os.MkdirAll(cfgDir, 0755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
-	if err := viper.WriteConfigAs(filepath.Join(cfgDir, "config.yaml")); err != nil {
+	if err := settings.Write(filepath.Join(cfgDir, "config.yaml")); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
@@ -68,9 +71,9 @@ func writeConfig() error {
 // ~/Library/Application Support/calctl/config.yaml and updates Active
 // immediately.
 func SetLicense(key, status, benefitID string) error {
-	viper.Set("license_key", key)
-	viper.Set("license_status", status)
-	viper.Set("license_benefit_id", benefitID)
+	settings.Set("license_key", key)
+	settings.Set("license_status", status)
+	settings.Set("license_benefit_id", benefitID)
 	if err := writeConfig(); err != nil {
 		return err
 	}
@@ -92,26 +95,23 @@ func Load() error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(dir)
-	viper.AddConfigPath(".")
-	viper.SetEnvPrefix("CALCTL")
-	viper.AutomaticEnv()
+	settings.SetEnvPrefix("CALCTL")
+	settings.AddPath(dir)
+	settings.AddPath(".")
 
-	viper.SetDefault("default_calendar", "")
-	viper.SetDefault("working_hours_from", "09:00")
-	viper.SetDefault("working_hours_to", "18:00")
-	viper.SetDefault("min_free_slot_min", 30)
+	settings.SetDefault("default_calendar", "")
+	settings.SetDefault("working_hours_from", "09:00")
+	settings.SetDefault("working_hours_to", "18:00")
+	settings.SetDefault("min_free_slot_min", 30)
 
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+	if err := settings.Read(); err != nil {
+		if !errors.Is(err, coreconfig.ErrNotFound) {
 			return fmt.Errorf("read config: %w", err)
 		}
 		// no config file is fine — defaults apply
 	}
 
-	return viper.Unmarshal(&Active)
+	return settings.Unmarshal(&Active)
 }
 
 // DBPathOverride, when non-empty, overrides DBPath()'s return value. Used by tests
@@ -119,7 +119,7 @@ func Load() error {
 var DBPathOverride string
 
 // DBPath returns the database file path. DBPathOverride (test-only) wins
-// if set; otherwise data_dir (viper key, also settable via CALCTL_DATA_DIR
+// if set; otherwise data_dir (config key, also settable via CALCTL_DATA_DIR
 // since AutomaticEnv is on) points it at a user-chosen directory — e.g.
 // inside iCloud Drive or Dropbox — resolved via coreconfig.ResolveDir; with
 // neither set, the private default (~/Library/Application Support/calctl)
@@ -128,7 +128,7 @@ func DBPath() string {
 	if DBPathOverride != "" {
 		return DBPathOverride
 	}
-	if dir := viper.GetString("data_dir"); dir != "" {
+	if dir := settings.GetString("data_dir"); dir != "" {
 		resolved, _ := coreconfig.ResolveDir("calctl", dir)
 		return filepath.Join(resolved, "calctl.db")
 	}
@@ -139,7 +139,7 @@ func DBPath() string {
 // Shared reports whether DBPath currently resolves to a user-configured
 // directory (data_dir) rather than the tool's private default.
 func Shared() bool {
-	return DBPathOverride == "" && viper.GetString("data_dir") != ""
+	return DBPathOverride == "" && settings.GetString("data_dir") != ""
 }
 
 // LastSyncedPath is the marker file (see missionctl-core/lastsync) tracking
@@ -153,7 +153,7 @@ func LastSyncedPath() string {
 // updates Active in memory, so it takes effect immediately without a
 // restart. Used by the TUI's "c" calendar picker.
 func SetDefaultCalendar(name string) error {
-	viper.Set("default_calendar", name)
+	settings.Set("default_calendar", name)
 	if err := writeConfig(); err != nil {
 		return err
 	}
