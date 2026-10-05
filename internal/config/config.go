@@ -49,7 +49,7 @@ func PolarOrgID() string {
 }
 
 // writeConfig resolves ~/Library/Application Support/calctl (creating it if
-// needed) and writes config's in-memory config there as config.yaml — shared
+// needed) and writes the in-memory settings there as config.yaml — shared
 // by SetLicense and SetDefaultCalendar, which both just set a config key and
 // need it persisted the same way.
 func writeConfig() error {
