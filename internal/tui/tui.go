@@ -3,10 +3,17 @@ package tui
 import (
 	"context"
 	"fmt"
+	"image/color"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/aeon022/calctl/internal/calendar"
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/calctl/internal/models"
@@ -17,26 +24,28 @@ import (
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/palette"
 	"github.com/aeon022/missionctl-core/theme"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 	"github.com/sahilm/fuzzy"
 )
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
+// adaptive resolves a light/dark ANSI color pair once, at startup — v2 dropped
+// AdaptiveColor, and these package-level styles are built once, not per render.
+var adaptive = func() func(light, dark string) color.Color {
+	pick := lipgloss.LightDark(lipgloss.HasDarkBackground(os.Stdin, os.Stdout))
+	return func(light, dark string) color.Color { return pick(lipgloss.Color(light), lipgloss.Color(dark)) }
+}()
+
 var (
 	// Shared across the suite via missionctl-core/theme.
-	colorBlue   = theme.Blue
-	colorGreen  = theme.Green
-	colorRed    = theme.Red
-	colorAmber  = theme.Amber
-	colorMuted  = theme.Muted
-	colorSubtle = theme.Subtle
-	colorCyan   = lipgloss.AdaptiveColor{Light: "30", Dark: "43"}
+	colorBlue   = theme.BlueV2
+	colorGreen  = theme.GreenV2
+	colorRed    = theme.RedV2
+	colorAmber  = theme.AmberV2
+	colorMuted  = theme.MutedV2
+	colorSubtle = theme.SubtleV2
+	colorCyan   = adaptive("30", "43")
 
 	styleHeader = lipgloss.NewStyle().
 			Bold(true).
@@ -57,10 +66,10 @@ var (
 
 	styleTitleSelected = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(theme.SelectedFg).
-				Background(theme.SelectedBg)
+				Foreground(theme.SelectedFgV2).
+				Background(theme.SelectedBgV2)
 
-	styleTitleHover = theme.Hover
+	styleTitleHover = theme.HoverV2
 
 	styleCal = lipgloss.NewStyle().
 			Foreground(colorMuted)
@@ -89,7 +98,7 @@ var (
 	// it sits.
 	styleError = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(theme.OnAccent).
+			Foreground(theme.OnAccentV2).
 			Background(colorRed).
 			Padding(0, 1)
 
@@ -133,7 +142,7 @@ var (
 			Foreground(colorSubtle)
 
 	styleKWDayToday = lipgloss.NewStyle().
-			Foreground(theme.SelectedFg).
+			Foreground(theme.SelectedFgV2).
 			Background(colorBlue).
 			Bold(true).
 			Padding(0, 1)
@@ -293,10 +302,12 @@ func New() Model {
 	si := textinput.New()
 	si.Placeholder = "filter events…"
 	si.CharLimit = 100
+	si.SetWidth(40)
 
 	pi := textinput.New()
 	pi.Placeholder = "command…"
 	pi.CharLimit = 40
+	pi.SetWidth(40)
 
 	return Model{
 		daysAhead:    7,
@@ -326,6 +337,7 @@ func newFormInputs() [fCount]textinput.Model {
 		t := textinput.New()
 		t.Placeholder = placeholders[i]
 		t.CharLimit = 120
+		t.SetWidth(60)
 		inputs[i] = t
 	}
 	inputs[fDate].SetValue(time.Now().Format("2006-01-02"))
@@ -448,9 +460,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncing = false
 		m.err = msg.err
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		switch msg.Button {
-		case tea.MouseButtonWheelUp:
+		case tea.MouseWheelUp:
 			if len(m.rows) > 0 {
 				prev := m.cursor - 1
 				for prev > 0 && m.rows[prev].isHeader {
@@ -460,7 +472,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = prev
 				}
 			}
-		case tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			if len(m.rows) > 0 {
 				next := m.cursor + 1
 				for next < len(m.rows) && m.rows[next].isHeader {
@@ -470,28 +482,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = next
 				}
 			}
-		case tea.MouseButtonLeft:
-			if msg.Action != tea.MouseActionPress || m.view != viewList {
+		}
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft || m.view != viewList {
+			return m, nil
+		}
+		if i := m.rowHitTest(msg.Y); i >= 0 {
+			now := time.Now()
+			if i == m.lastClickRow && now.Sub(m.lastClickAt) < doubleClickWindow {
+				m.cursor = i
+				m.lastClickRow = -1 // consumed, so a third click starts fresh
+				if e := m.rows[i].event; e != nil && e.Title != "" && e.Title != "(no events)" {
+					m.view = viewDetail
+				}
 				return m, nil
 			}
-			if i := m.rowHitTest(msg.Y); i >= 0 {
-				now := time.Now()
-				if i == m.lastClickRow && now.Sub(m.lastClickAt) < doubleClickWindow {
-					m.cursor = i
-					m.lastClickRow = -1 // consumed, so a third click starts fresh
-					if e := m.rows[i].event; e != nil && e.Title != "" && e.Title != "(no events)" {
-						m.view = viewDetail
-					}
-					return m, nil
-				}
-				m.cursor = i
-				m.lastClickRow = i
-				m.lastClickAt = now
-			}
-		case tea.MouseButtonNone:
-			if msg.Action == tea.MouseActionMotion && m.view == viewList {
-				m.hoverRow = m.rowHitTest(msg.Y)
-			}
+			m.cursor = i
+			m.lastClickRow = i
+			m.lastClickAt = now
+		}
+		return m, nil
+
+	case tea.MouseMotionMsg:
+		if m.view == viewList {
+			m.hoverRow = m.rowHitTest(msg.Y)
 		}
 		return m, nil
 
@@ -503,7 +519,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 
@@ -517,7 +533,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// The delete-undo toast gets the longer undoWindow instead of the
 	// usual 3s — it's also the window "u" checks below, so the message
 	// and the capability it describes expire together.
@@ -611,9 +627,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			chosen := matches[m.paletteCursor]
 			m = closePalette(m)
-			replay := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(chosen.Key)}
+			replay := tea.KeyPressMsg{Text: chosen.Key, Code: []rune(chosen.Key)[0]}
 			if chosen.Key == "enter" {
-				replay = tea.KeyMsg{Type: tea.KeyEnter}
+				replay = tea.KeyPressMsg{Code: tea.KeyEnter}
 			}
 			newM, cmd := m.Update(replay)
 			return newM.(Model), cmd
@@ -910,7 +926,15 @@ func (m Model) assembleFrame(content string) string {
 	return b.String()
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	v := tea.NewView(m.viewContent())
+	// v2: AltScreen/MouseMode are per-View fields, not Program options.
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeAllMotion
+	return v
+}
+
+func (m Model) viewContent() string {
 	if m.width == 0 {
 		return "Loading..."
 	}
@@ -1397,7 +1421,7 @@ func (m Model) openHelp() Model {
 		popW = 40
 	}
 
-	vp := viewport.New(popW-6, popH-5) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
+	vp := viewport.New(viewport.WithWidth(popW-6), viewport.WithHeight(popH-5)) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
 	vp.SetContent(m.helpContent())
 
 	m.helpVP = vp
@@ -1412,7 +1436,7 @@ func (m Model) openHelp() Model {
 // the whole screen — the list stays visible around it.
 func (m Model) renderHelpPopup() string {
 	footer := "esc / ?  close"
-	if m.helpVP.TotalLineCount() > m.helpVP.Height {
+	if m.helpVP.TotalLineCount() > m.helpVP.Height() {
 		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.helpVP.ScrollPercent()*100), footer)
 	}
 	body := m.helpVP.View() + "\n" + styleStatusBar.Render(footer)
@@ -1841,6 +1865,22 @@ func key(k string) string {
 	return styleStatusKey.Render(k + ":")
 }
 
+// motionThrottleFilter drops MouseMotionMsg messages arriving <16ms apart.
+func motionThrottleFilter() func(tea.Model, tea.Msg) tea.Msg {
+	var lastMotion time.Time
+	return func(_ tea.Model, msg tea.Msg) tea.Msg {
+		if _, ok := msg.(tea.MouseMotionMsg); !ok {
+			return msg
+		}
+		now := time.Now()
+		if now.Sub(lastMotion) < 16*time.Millisecond {
+			return nil
+		}
+		lastMotion = now
+		return msg
+	}
+}
+
 // Run starts the TUI.
 func Run() error {
 	// WithFPS(30), not the 60 default: WithMouseAllMotion forces a full
@@ -1849,7 +1889,7 @@ func Run() error {
 	// confirmed as the cause of a severe duplicate-content rendering bug
 	// in notectl (same bubbletea setup). Halving the rate gives the
 	// terminal breathing room.
-	p := tea.NewProgram(New(), tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithFPS(30))
+	p := tea.NewProgram(New(), tea.WithFilter(motionThrottleFilter()), tea.WithFPS(30))
 	_, err := p.Run()
 	return err
 }

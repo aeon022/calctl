@@ -5,11 +5,10 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/aeon022/calctl/internal/models"
 	"github.com/aeon022/missionctl-core/palette"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
@@ -17,14 +16,14 @@ func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
 	m.width, m.height = 100, 30
 	m.loading = false
 
-	mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	mi, _ := m.Update(tea.KeyPressMsg{Text: ":", Code: []rune(":")[0]})
 	m = mi.(Model)
 	if !m.inPalette {
 		t.Fatal("expected inPalette after ':'")
 	}
 
 	for _, r := range "syn" {
-		mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		mi, _ = m.Update(tea.KeyPressMsg{Text: string(r), Code: r})
 		m = mi.(Model)
 	}
 	matches := palette.Match(paletteCommands, m.paletteInput.Value())
@@ -32,7 +31,7 @@ func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
 		t.Fatalf("expected 'sync' to be the top match for query %q, got %v", m.paletteInput.Value(), matches)
 	}
 
-	mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mi, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = mi.(Model)
 	if m.inPalette {
 		t.Error("expected palette to close after executing a command")
@@ -46,10 +45,10 @@ func TestCommandPalette_EscCloses(t *testing.T) {
 	m := New()
 	m.width, m.height = 100, 30
 	m.loading = false
-	mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	mi, _ := m.Update(tea.KeyPressMsg{Text: ":", Code: []rune(":")[0]})
 	m = mi.(Model)
 
-	mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mi, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = mi.(Model)
 	if m.inPalette {
 		t.Error("expected esc to close the palette")
@@ -78,14 +77,15 @@ func TestCommandPalette_ManyHeadersDoesNotOverflow(t *testing.T) {
 		)
 	}
 
-	mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	mi, _ := m.Update(tea.KeyPressMsg{Text: ":", Code: []rune(":")[0]})
 	m = mi.(Model)
 
-	lines := strings.Split(m.View(), "\n")
+	lines := strings.Split(ansi.Strip(m.viewContent()), "\n")
 	if len(lines) > m.height {
 		t.Errorf("rendered view is %d lines, exceeds terminal height %d — palette input would be pushed off screen", len(lines), m.height)
 	}
-	if !strings.Contains(m.View(), "command…") {
+	// "ommand…": the focused cursor is drawn over the placeholder's first rune in v2.
+	if !strings.Contains(ansi.Strip(m.viewContent()), "ommand…") {
 		t.Error("expected the palette input line to still be visible in the rendered view")
 	}
 }
@@ -96,7 +96,7 @@ func TestHelpOverlay_OpenScrollClose(t *testing.T) {
 	m.height = 30
 	m.loading = false
 
-	mi, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	mi, _ := m.Update(tea.KeyPressMsg{Text: "?", Code: []rune("?")[0]})
 	m = mi.(Model)
 	if m.view != viewHelp {
 		t.Fatalf("expected viewHelp after '?', got %v", m.view)
@@ -107,14 +107,14 @@ func TestHelpOverlay_OpenScrollClose(t *testing.T) {
 
 	before := m.helpVP.ScrollPercent()
 	for i := 0; i < 5; i++ {
-		mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		mi, _ = m.Update(tea.KeyPressMsg{Text: "j", Code: []rune("j")[0]})
 		m = mi.(Model)
 	}
 	if m.helpVP.ScrollPercent() <= before {
 		t.Errorf("expected scroll to advance after pressing j, stayed at %v", before)
 	}
 
-	mi, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mi, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = mi.(Model)
 	if m.view != viewList {
 		t.Errorf("expected esc to close help back to viewList, got %v", m.view)
@@ -147,7 +147,8 @@ func TestHelpOverlay_PopupBorderColumnIsConsistent(t *testing.T) {
 	m.loading = false
 	m = m.openHelp()
 
-	out := m.View()
+	// ansi.Strip: v2 always emits real ANSI codes, which shift raw byte columns.
+	out := ansi.Strip(m.viewContent())
 	lines := strings.Split(out, "\n")
 	col := -1
 	for i, l := range lines {
@@ -225,9 +226,6 @@ func TestBuildRows_PreservesDayGroupingRatherThanRankingByMatchQuality(t *testin
 }
 
 func TestHighlightMatches_ColorsOnlyMatchedRunes(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.ANSI256)
-	defer lipgloss.SetColorProfile(termenv.Ascii)
-
 	idxs := fuzzyMatchIndexes("bgt", "budgetctl")
 	if idxs == nil {
 		t.Fatal("expected 'bgt' to fuzzy-match 'budgetctl'")
