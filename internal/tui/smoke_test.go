@@ -75,3 +75,14 @@ func TestFooterKeepsMostImportantHintsWhenNarrow(t *testing.T) {
 		t.Errorf("narrow footer should keep the first hints and drop the last: %q", out)
 	}
 }
+
+func TestEmptyDayShowsNoBogusTimeRange(t *testing.T) {
+	m, _ := tuitest.Send(loaded(t), tuitest.Resize(110, 28))
+	text := tuitest.Text(m)
+	if !strings.Contains(text, "(no events)") {
+		t.Fatalf("test data should contain an empty day:\n%s", text)
+	}
+	if strings.Contains(text, "00:00–00:00") {
+		t.Errorf("an empty day must not print a 00:00–00:00 time range:\n%s", text)
+	}
+}

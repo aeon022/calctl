@@ -205,6 +205,9 @@ func (m Model) renderList() string {
 		if e.AllDay {
 			timeStr = styleAllDay.Render("all day    ")
 		}
+		if e.StartTime.IsZero() { // the "(no events)" placeholder has no times; don't print 00:00–00:00
+			timeStr = strings.Repeat(" ", 11)
+		}
 
 		titleStyle := styleTitle
 		switch {
