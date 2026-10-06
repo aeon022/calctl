@@ -84,7 +84,7 @@ func (m Model) renderWeekNav() string {
 	var days []string
 	for i := 0; i < 7; i++ {
 		d := ws.AddDate(0, 0, i)
-		label := shortWeekday(d) + " " + fmt.Sprintf("%02d", d.Day())
+		label := d.Format("Mon 02")
 		switch {
 		case sameDay(d, today):
 			days = append(days, styleKWDayToday.Render(label))
@@ -122,8 +122,12 @@ func (m Model) sectionLabel() string {
 	}
 }
 
+// dateFmt is the one date format used in the header, day banners and
+// details: "Tue 06 Oct".
+const dateFmt = "Mon 02 Jan"
+
 func (m Model) renderHeader() string {
-	left := styleHeader.Render("calctl") + styleStatusBar.Render(" · "+m.sectionLabel()) + "  " + time.Now().Format("Mon, Jan 02 2006")
+	left := styleHeader.Render("calctl") + styleStatusBar.Render(" · "+m.sectionLabel()) + "  " + time.Now().Format(dateFmt)
 	right := ""
 	if m.submitting {
 		right = m.sp.View() + styleLoading.Render(" saving…")
@@ -185,11 +189,15 @@ func (m Model) renderList() string {
 	// row-count window alone, so the palette/search bar above it can never
 	// get pushed off screen by an under-budgeted tail of the list.
 	linesUsed := 0
-	for _, r := range visibleRows {
+	for li, r := range visibleRows {
 		if linesUsed >= contentHeight {
 			break
 		}
 		if r.isHeader {
+			if li > 0 { // breathing room: "(no events)" of one day must not read as part of the next
+				b.WriteString("\n")
+				linesUsed++
+			}
 			b.WriteString("  " + styleDateBanner.Render(r.label) + "\n")
 			b.WriteString("  " + styleDivider.Render(strings.Repeat("─", m.width-4)) + "\n")
 			linesUsed += 2
@@ -275,10 +283,14 @@ func (m Model) rowHitTest(y int) int {
 	visible, start := m.visibleRowsWithStart(contentHeight)
 	for i, r := range visible {
 		if r.isHeader {
-			if y >= row && y < row+2 {
+			lines := 2 // banner + divider
+			if i > 0 {
+				lines = 3 // plus the blank line above every header but the first visible one
+			}
+			if y >= row && y < row+lines {
 				return -1
 			}
-			row += 2
+			row += lines
 			continue
 		}
 		if y == row {
@@ -322,7 +334,7 @@ func (m Model) renderDetail() string {
 	var b strings.Builder
 	b.WriteString("\n")
 	b.WriteString(styleHeader.Render(e.Title) + "\n\n")
-	b.WriteString(fmt.Sprintf("  Date      %s\n", e.StartTime.Format("Mon, Jan 02 2006")))
+	b.WriteString(fmt.Sprintf("  Date      %s\n", e.StartTime.Format(dateFmt+" 2006")))
 	if e.AllDay {
 		b.WriteString("  Time      All day\n")
 	} else {
@@ -386,7 +398,7 @@ func (m Model) renderFree() string {
 	var lastDate string
 	for _, sl := range slots {
 		if sl.Date != lastDate {
-			b.WriteString("  " + styleDateBanner.Render(sl.Start.Format("Mon, Jan 02")) + "\n")
+			b.WriteString("  " + styleDateBanner.Render(sl.Start.Format(dateFmt)) + "\n")
 			lastDate = sl.Date
 		}
 		b.WriteString(fmt.Sprintf("    %s – %s  (%s)\n",
@@ -442,23 +454,52 @@ func (m Model) visibleRows(height int) []row {
 // so callers that need to map a visible row back to its m.rows index
 // (rowHitTest) don't have to duplicate the windowing math.
 func (m Model) visibleRowsWithStart(height int) ([]row, int) {
-	if len(m.rows) == 0 {
+	n := len(m.rows)
+	if n == 0 {
 		return nil, 0
 	}
-	start := 0
-	end := len(m.rows)
-	if end-start > height {
-		mid := m.cursor - height/2
-		if mid < 0 {
-			mid = 0
+	height = max(height, 1)
+	total := 0
+	for i := range m.rows {
+		total += m.rowLines(i)
+	}
+	if total <= height {
+		return m.rows, 0
+	}
+	// grow a window around the cursor (below first, then above) within the
+	// LINE budget, so the cursor row is always on screen
+	cur := min(max(m.cursor, 0), n-1)
+	start, end, used := cur, cur+1, m.rowLines(cur)
+	for {
+		grew := false
+		if end < n && used+m.rowLines(end) <= height {
+			used += m.rowLines(end)
+			end++
+			grew = true
 		}
-		if mid+height > end {
-			mid = end - height
+		if start > 0 && used+m.rowLines(start-1) <= height {
+			start--
+			used += m.rowLines(start)
+			grew = true
 		}
-		start = mid
-		end = start + height
+		if !grew {
+			break
+		}
 	}
 	return m.rows[start:end], start
+}
+
+// rowLines is the most screen lines row i can take: an event row 1, a day
+// header banner + divider (+ a blank line above it unless it is the first row
+// of the window — budgeted conservatively as 3 here).
+func (m Model) rowLines(i int) int {
+	if m.rows[i].isHeader {
+		if i > 0 {
+			return 3
+		}
+		return 2
+	}
+	return 1
 }
 
 // advanceCursorPastHeader moves the cursor onto the first event row.

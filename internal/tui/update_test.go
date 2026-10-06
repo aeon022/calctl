@@ -771,21 +771,21 @@ func TestBuildRowsDSTBoundaryDays(t *testing.T) {
 	// Autumn: Sun 2026-10-25 is 25 hours long; 23:30 is inside the day.
 	fall := time.Date(2026, 10, 25, 23, 30, 0, 0, berlin)
 	rows := buildRows(mk(fall), offsetFor(fall), 7, "")
-	if n := count(rows, "Oct 25"); n != 1 {
-		t.Errorf("event at 23:30 on the 25-hour day shown %d times under Oct 25, want 1", n)
+	if n := count(rows, "25 Oct"); n != 1 {
+		t.Errorf("event at 23:30 on the 25-hour day shown %d times under 25 Oct, want 1", n)
 	}
-	if n := count(rows, "Oct 26"); n != 0 {
-		t.Errorf("…and %d times under Oct 26, want 0", n)
+	if n := count(rows, "26 Oct"); n != 0 {
+		t.Errorf("…and %d times under 26 Oct, want 0", n)
 	}
 
 	// Spring: Sun 2026-03-29 is 23 hours long; 00:30 on the 30th belongs to the 30th only.
 	spring := time.Date(2026, 3, 30, 0, 30, 0, 0, berlin)
 	rows = buildRows(mk(spring), offsetFor(spring), 7, "")
-	if n := count(rows, "Mar 29"); n != 0 {
-		t.Errorf("event on Mar 30 00:30 also listed under the 23-hour Mar 29 (%d×)", n)
+	if n := count(rows, "29 Mar"); n != 0 {
+		t.Errorf("event on 30 Mar 00:30 also listed under the 23-hour Mar 29 (%d×)", n)
 	}
-	if n := count(rows, "Mar 30"); n != 1 {
-		t.Errorf("event shown %d times under Mar 30, want 1", n)
+	if n := count(rows, "30 Mar"); n != 1 {
+		t.Errorf("event shown %d times under 30 Mar, want 1", n)
 	}
 }
 

@@ -39,7 +39,7 @@ func buildRows(events []models.Event, weekOffset, daysAhead int, query string) [
 			continue
 		}
 
-		label := day.Format("Mon, Jan 02")
+		label := day.Format(dateFmt)
 		if sameDay(day, today) {
 			label = "TODAY — " + label
 		}
@@ -108,18 +108,6 @@ func daysWithEvents(events []models.Event) map[string]bool {
 		m[e.StartTime.Format("2006-01-02")] = true
 	}
 	return m
-}
-
-var shortDays = map[time.Weekday]string{
-	time.Monday: "Mo", time.Tuesday: "Di", time.Wednesday: "Mi",
-	time.Thursday: "Do", time.Friday: "Fr", time.Saturday: "Sa", time.Sunday: "So",
-}
-
-func shortWeekday(t time.Time) string {
-	if s, ok := shortDays[t.Weekday()]; ok {
-		return s
-	}
-	return t.Format("Mo")
 }
 
 // fuzzyMatchIndexes returns the rune indexes within s that q fuzzy-matched,
