@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/aeon022/missionctl-core/activity"
 	"os"
 	"strings"
 	"time"
@@ -128,6 +129,7 @@ manually in Calendar.app.`,
 		if err := calendar.CreateEvent(e); err != nil {
 			return fmt.Errorf("create event: %w", err)
 		}
+		activity.Log("calctl", "added", e.Title)
 
 		// save to local cache
 		if s != nil {

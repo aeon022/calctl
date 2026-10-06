@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/aeon022/missionctl-core/activity"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,6 +127,7 @@ Example frontmatter:
 					fmt.Printf("  ✓ %s  %s\n", event.StartTime.Format("Mon Jan 2, 15:04"), event.Title)
 				}
 				imported++
+				activity.Log("calctl", "added", event.Title)
 			}
 		}
 

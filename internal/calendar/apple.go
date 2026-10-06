@@ -137,7 +137,15 @@ set time of %s to %d`,
 		varName, varName, varName, t.Year(), varName, int(t.Month()), varName, t.Day(), varName, seconds)
 }
 
-// CreateEvent creates a new event in Apple Calendar via AppleScript.
+// CreateEvent, CreateEvents and DeleteEvent are the provider writes. They are
+// variables so tests can swap them and never touch the real Calendar app.
+var (
+	CreateEvent  = createEvent
+	CreateEvents = createEvents
+	DeleteEvent  = deleteEvent
+)
+
+// createEvent creates a new event in Apple Calendar via AppleScript.
 //
 // Requires e.Calendar to be set — it used to silently fall back to
 // "whichever calendar Calendar.app happens to list first" (firstWritableCalendar,
@@ -149,7 +157,7 @@ set time of %s to %d`,
 // create form, the MCP server) already resolves --cal or
 // config.Active.DefaultCalendar before reaching here, so this only fires
 // when the user genuinely hasn't specified or configured one anywhere.
-func CreateEvent(e *models.Event) error {
+func createEvent(e *models.Event) error {
 	if e.Calendar == "" {
 		return fmt.Errorf("no calendar specified — pass --cal <name>, or set default_calendar in the calctl config; run `calctl calendars` to see available names")
 	}
@@ -179,7 +187,7 @@ func CreateEvent(e *models.Event) error {
 // limitation, not something fixable from calctl's side. A recurring event
 // created via `calctl add --repeat` may need to be deleted manually in
 // Calendar.app if this function reports success but the event persists.
-func DeleteEvent(e *models.Event) error {
+func deleteEvent(e *models.Event) error {
 	startISO := e.StartTime.Format("2006-01-02T15:04:05")
 	escapedTitle := applescript.Escape(e.Title)
 
@@ -314,7 +322,7 @@ return output
 // doesn't abort the rest of the batch; the per-event outcome is returned in
 // the same order as events so callers can still report success/failure per
 // item like they did with the old loop.
-func CreateEvents(events []*models.Event) ([]error, error) {
+func createEvents(events []*models.Event) ([]error, error) {
 	if len(events) == 0 {
 		return nil, nil
 	}

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/aeon022/missionctl-core/activity"
 	"os/exec"
 	"strings"
 	"time"
@@ -163,6 +164,9 @@ func createEventCmd(inputs [fCount]textinput.Model, editTarget *models.Event) te
 			return eventCreatedMsg{err: err}
 		}
 		_ = s.UpsertEvent(ctx, e)
+		if editTarget == nil { // an edit re-creates the event, it isn't a new one
+			activity.Log("calctl", "added", e.Title)
+		}
 		return eventCreatedMsg{warning: warning}
 	}
 }
@@ -195,6 +199,7 @@ func deleteEventCmd(e *models.Event) tea.Cmd {
 		if err := calendar.DeleteEvent(e); err != nil {
 			return eventDeletedMsg{err: err}
 		}
+		activity.Log("calctl", "deleted", e.Title)
 		s, err := store.New(config.DBPath(), config.Shared())
 		if err == nil {
 			defer s.Close()

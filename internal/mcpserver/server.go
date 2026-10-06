@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aeon022/missionctl-core/activity"
 	"strings"
 	"time"
 
@@ -288,6 +289,7 @@ func handleCreateEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	if err := calendar.CreateEvent(e); err != nil {
 		return mcp.NewToolResultError("create failed: " + err.Error()), nil
 	}
+	activity.Log("calctl", "added", e.Title)
 
 	// Cache in SQLite so subsequent list_events calls show it immediately.
 	if s, err := store.New(config.DBPath(), config.Shared()); err == nil {
@@ -348,6 +350,7 @@ func handleDeleteEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		return mcp.NewToolResultError("delete failed: " + err.Error()), nil
 	}
 	_ = s.DeleteByID(context.Background(), target.ID)
+	activity.Log("calctl", "deleted", target.Title)
 
 	return mcp.NewToolResultText(fmt.Sprintf("Deleted: %s on %s", title, date.Format("Mon, Jan 02 2006"))), nil
 }
