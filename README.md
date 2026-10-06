@@ -360,6 +360,30 @@ Claude calls `create_event` with the extracted title, start, end, and calendar v
 
 ---
 
+## Recent changes (October 2026)
+
+- **Window focus.** When the terminal window regains focus, the list reloads from the local database — at most every 5 seconds, and only while you are just browsing (never while a form, editor, search, palette or confirmation is open, so nothing you are typing is lost). Terminals that don't report focus events simply never trigger it.
+
+- **Clipboard.** `y` copies the selected event's title — now through OSC 52 as well as `pbcopy`, so it also works over SSH and inside tmux (your terminal must allow OSC 52; locally `pbcopy` still does the job).
+
+- **Footer and empty states.** The key-hint footer is the suite-wide one: it never wraps and drops the least important hints first on narrow terminals. Empty lists and loading screens show a short message with a hint what to press.
+
+- **Editing keeps everything.** Editing an event no longer drops its notes and attendees, and an all-day event stays all-day.
+
+- **Durations.** A negative `--duration` (`-1h`, `-30`) is rejected instead of producing an event that ends before it starts.
+
+- **`--until`.** With `--repeat`, the occurrence on the `--until` day itself is now included (the rule ends at the end of that day, not at 00:00).
+
+- **Daylight saving.** The day-by-day list is built by calendar date, so on the 25-hour day events in the last hour are no longer hidden and on the 23-hour day events just after midnight are no longer shown twice.
+
+- **`summarize --email`.** A quote or backslash in the event title no longer breaks the draft file; the draft is written to a fresh private temp file (0600) instead of a predictable `/tmp` name.
+
+- **Config search path.** `./config.yaml` in the current directory is no longer read; only calctl's own config directory is.
+
+- The TUI now runs on Bubble Tea v2; key bindings are unchanged.
+
+---
+
 ## Architecture
 
 ```
