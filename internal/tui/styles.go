@@ -42,13 +42,6 @@ var (
 			Bold(true).
 			Foreground(colorCyan)
 
-	styleDivider = lipgloss.NewStyle().
-			Foreground(colorSubtle)
-
-	styleTime = lipgloss.NewStyle().
-			Foreground(colorAmber).
-			Width(16)
-
 	styleTitle = lipgloss.NewStyle()
 
 	styleTitleSelected = lipgloss.NewStyle().
@@ -56,14 +49,8 @@ var (
 				Foreground(theme.SelectedFgV2).
 				Background(theme.SelectedBgV2)
 
-	styleTitleHover = theme.HoverV2
-
 	styleCal = lipgloss.NewStyle().
 			Foreground(colorMuted)
-
-	styleAllDay = lipgloss.NewStyle().
-			Foreground(colorGreen).
-			Width(16)
 
 	styleOK = lipgloss.NewStyle().Foreground(colorGreen)
 
@@ -112,26 +99,6 @@ var (
 	styleDeleteConfirm = lipgloss.NewStyle().
 				Foreground(colorRed).
 				Bold(true)
-
-	styleKWArrow = lipgloss.NewStyle().
-			Foreground(colorBlue).
-			Bold(true)
-
-	styleKWLabel = lipgloss.NewStyle().
-			Foreground(colorMuted).
-			Bold(true)
-
-	styleKWDay = lipgloss.NewStyle().
-			Foreground(colorSubtle)
-
-	styleKWDayToday = lipgloss.NewStyle().
-			Foreground(theme.SelectedFgV2).
-			Background(colorBlue).
-			Bold(true).
-			Padding(0, 1)
-
-	styleKWDayEvent = lipgloss.NewStyle().
-			Foreground(colorCyan)
 )
 
 // ── command palette (":") ────────────────────────────────────────────────────

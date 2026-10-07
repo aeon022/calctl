@@ -14,8 +14,15 @@ import (
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func buildRows(events []models.Event, weekOffset, daysAhead int, query string) []row {
+	return buildRowsAt(events, weekOffset, daysAhead, query, time.Now())
+}
+
+// buildRowsAt is buildRows with an explicit "now" (tests, and the now line).
+// Days without events collapse into ONE non-selectable line; today gets a
+// "now" line between the events that are over and the ones still to come.
+func buildRowsAt(events []models.Event, weekOffset, daysAhead int, query string, now time.Time) []row {
 	from := weekStart(weekOffset)
-	today := startOfDay(time.Now())
+	today := startOfDay(now)
 	q := strings.ToLower(strings.TrimSpace(query))
 	var rows []row
 
@@ -34,7 +41,7 @@ func buildRows(events []models.Event, weekOffset, daysAhead int, query string) [
 			dayEvents = append(dayEvents, e)
 		}
 
-		// while filtering, hide days without matches instead of stacking empty headers
+		// while filtering, hide days without matches instead of stacking empty lines
 		if q != "" && len(dayEvents) == 0 {
 			continue
 		}
@@ -43,15 +50,24 @@ func buildRows(events []models.Event, weekOffset, daysAhead int, query string) [
 		if sameDay(day, today) {
 			label = "TODAY — " + label
 		}
-		rows = append(rows, row{isHeader: true, label: label})
-
 		if len(dayEvents) == 0 {
-			rows = append(rows, row{event: &models.Event{Title: "(no events)"}})
-		} else {
-			for i := range dayEvents {
-				e := dayEvents[i]
-				rows = append(rows, row{event: &e})
+			rows = append(rows, row{isHeader: true, kind: rowEmptyDay, label: label, day: day})
+			continue
+		}
+		rows = append(rows, row{isHeader: true, kind: rowDay, label: label, day: day, count: len(dayEvents)})
+		nowAt := -1
+		if sameDay(day, today) {
+			nowAt = nowIndex(dayEvents, now)
+		}
+		for i := range dayEvents {
+			if i == nowAt {
+				rows = append(rows, row{isHeader: true, kind: rowNow, label: now.Format("15:04"), day: day})
 			}
+			e := dayEvents[i]
+			rows = append(rows, row{event: &e})
+		}
+		if nowAt == len(dayEvents) {
+			rows = append(rows, row{isHeader: true, kind: rowNow, label: now.Format("15:04"), day: day})
 		}
 	}
 	return rows

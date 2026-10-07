@@ -135,21 +135,21 @@ func TestWindowSizeAndLoadedState(t *testing.T) {
 	}
 }
 
-func TestNavigationSkipsHeadersAndPlaceholders(t *testing.T) {
+func TestNavigationSkipsDayLinesAndNowLine(t *testing.T) {
 	m := loaded(t)
 	m.cursor = 0
 	m, _ = send(m, eventsLoadedMsg{events: m.events})
-	// first selectable row is the Monday placeholder "(no events)"
-	if curTitle(m) != "(no events)" {
-		t.Fatalf("cursor on %q", curTitle(m))
+	// day headers, collapsed empty days and the now line are never selectable
+	if curTitle(m) != "Standup" {
+		t.Fatalf("cursor starts on the first event, got %q", curTitle(m))
 	}
 	m, _ = send(m, press("j"))
-	if curTitle(m) != "Standup" {
-		t.Errorf("j: %q, want Standup (header skipped)", curTitle(m))
+	if curTitle(m) != "Review" {
+		t.Errorf("j: %q, want Review", curTitle(m))
 	}
 	m, _ = send(m, press("j"), press("down"))
-	if curTitle(m) != "(no events)" { // Wednesday is empty
-		t.Errorf("after two more steps: %q", curTitle(m))
+	if curTitle(m) != "Offsite" { // Wednesday (empty) is skipped, Thursday's all-day event is last
+		t.Errorf("after two more steps: %q, want to stop on the last event", curTitle(m))
 	}
 	m, _ = send(m, press("k"), press("up"))
 	if curTitle(m) != "Standup" {
@@ -166,20 +166,24 @@ func TestNavigationSkipsHeadersAndPlaceholders(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		m, _ = send(m, press("k"))
 	}
-	if m.cursor != 1 {
-		t.Errorf("k at the top: cursor %d, want the first non-header row (1)", m.cursor)
+	if m.rows[m.cursor].isHeader || curTitle(m) != "Standup" {
+		t.Errorf("k at the top: cursor %d on %q, want the first event", m.cursor, curTitle(m))
 	}
 }
 
 func TestNumberKeysJumpToNthEventRow(t *testing.T) {
 	m := loaded(t)
-	m, _ = send(m, press("2")) // rows: Mon placeholder, Standup, Review...
-	if curTitle(m) != "Standup" {
-		t.Errorf("'2' → %q, want the second visible row (headers not counted)", curTitle(m))
+	m, _ = send(m, press("2")) // rows: Standup, Review, Offsite (headers/empty days not counted)
+	if curTitle(m) != "Review" {
+		t.Errorf("'2' → %q, want the second visible event (headers not counted)", curTitle(m))
 	}
 	m, _ = send(m, press("3"))
-	if curTitle(m) != "Review" {
+	if curTitle(m) != "Offsite" {
 		t.Errorf("'3' → %q", curTitle(m))
+	}
+	m, _ = send(m, press("1"))
+	if curTitle(m) != "Standup" {
+		t.Errorf("'1' → %q", curTitle(m))
 	}
 }
 
@@ -222,18 +226,23 @@ func TestMouseWheelAndClicks(t *testing.T) {
 	}
 }
 
-func TestDoubleClickOnPlaceholderDoesNotOpenDetail(t *testing.T) {
+func TestClickOnDayLineDoesNotSelectOrOpenDetail(t *testing.T) {
 	m := loaded(t)
-	m.cursor = 0
-	m, _ = send(m, eventsLoadedMsg{events: m.events})
-	click := tea.MouseClickMsg{Button: tea.MouseLeft, X: 4, Y: 4 + 2} // first selectable row after the Mon header
-	idx := m.rowHitTest(click.Y)
-	if idx < 0 || m.rows[idx].event.Title != "(no events)" {
-		t.Skipf("layout assumption changed (row %d)", idx)
+	before := m.cursor
+	var y int = -1
+	for ly, l := range screenLines(m) {
+		if dayLine.MatchString(l) && ly >= headerLines {
+			y = ly
+			break
+		}
 	}
+	if y < 0 {
+		t.Fatal("no day line on screen")
+	}
+	click := tea.MouseClickMsg{Button: tea.MouseLeft, X: 4, Y: y}
 	m, _ = send(m, click, click)
-	if m.view != viewList {
-		t.Error("the \"(no events)\" placeholder is not an event")
+	if m.view != viewList || m.cursor != before {
+		t.Errorf("a day line is not an event: view=%v cursor %d→%d", m.view, before, m.cursor)
 	}
 }
 
@@ -341,7 +350,7 @@ func TestSearchMatchesLocationAndNotes(t *testing.T) {
 
 func TestDeleteConfirmAndUndo(t *testing.T) {
 	m := loaded(t)
-	m, _ = send(m, press("2"), press("d"))
+	m, _ = send(m, press("1"), press("d"))
 	if m.deleteTarget == nil || m.deleteTarget.Title != "Standup" {
 		t.Fatalf("d: target = %+v", m.deleteTarget)
 	}
@@ -507,7 +516,7 @@ func TestCreateFormEnterOnLastFieldSubmitsAndEscCancels(t *testing.T) {
 
 func TestEditFormPrefillsFromEvent(t *testing.T) {
 	m := loaded(t)
-	m, _ = send(m, press("3")) // Review
+	m, _ = send(m, press("2")) // Review
 	m, _ = send(m, press("e"))
 	if m.view != viewCreate || m.editTarget == nil || m.editTarget.ID != "b" {
 		t.Fatalf("view=%v target=%v", m.view, m.editTarget)
@@ -826,7 +835,7 @@ func TestViewsRenderWithoutPanic(t *testing.T) {
 		want string
 	}{
 		{"list", nil, "Standup"},
-		{"detail", []string{"3", "enter"}, "Review"},
+		{"detail", []string{"2", "enter"}, "Review"},
 		{"form", []string{"esc", "n"}, "New Event"},
 		{"help", []string{"esc", "?"}, "calctl"},
 		{"free", []string{"esc", "f"}, "Free Slots"},

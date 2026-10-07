@@ -173,12 +173,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button != tea.MouseLeft || m.view != viewList {
 			return m, nil
 		}
-		if i := m.rowHitTest(msg.Y); i >= 0 {
+		if msg.Y == stripRow {
+			return m.clickStrip(msg.X)
+		}
+		if i := m.listHit(msg.X, msg.Y); i >= 0 {
 			now := time.Now()
 			if i == m.lastClickRow && now.Sub(m.lastClickAt) < doubleClickWindow {
 				m.cursor = i
 				m.lastClickRow = -1 // consumed, so a third click starts fresh
-				if e := m.rows[i].event; e != nil && e.Title != "" && e.Title != "(no events)" {
+				if e := m.rows[i].event; e != nil {
 					m.view = viewDetail
 				}
 				return m, nil
@@ -191,7 +194,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMotionMsg:
 		if m.view == viewList {
-			m.hoverRow = m.rowHitTest(msg.Y)
+			m.hoverRow = m.listHit(msg.X, msg.Y)
 		}
 		return m, nil
 
@@ -452,17 +455,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		// jump to the nth visible (on-screen) event row, headers not
-		// counted — mirrors the same visibleRowsWithStart/contentHeight
+		// counted — mirrors the same listArea/visibleRowsWithStart
 		// math rowHitTest uses, so a digit lands on the same row a click at
 		// that screen position would.
 		n := int(msg.String()[0] - '0')
-		contentHeight := m.height - 6
-		if m.searching || m.searchQ != "" {
-			contentHeight -= 2
-		}
-		if m.inPalette {
-			contentHeight -= 8
-		}
+		_, _, _, h := m.listArea()
+		contentHeight := h - m.barLines()
 		visible, start := m.visibleRowsWithStart(contentHeight)
 		count := 0
 		for i, r := range visible {
@@ -589,4 +587,29 @@ func (m Model) submitCreate() (Model, tea.Cmd) {
 	m.submitting = true
 	m.err = nil
 	return m, tea.Batch(createEventCmd(m.inputs, m.editTarget), m.sp.Tick)
+}
+
+// clickStrip handles a click on the week strip at column x: the arrows change
+// the week (same as ←/→), a day jumps to its first event.
+func (m Model) clickStrip(x int) (tea.Model, tea.Cmd) {
+	l := m.stripLayout()
+	switch {
+	case x >= l.prev0 && x < l.prev1:
+		return m.handleKey(tea.KeyPressMsg{Code: tea.KeyLeft})
+	case x >= l.next0 && x < l.next1:
+		return m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	}
+	for _, sp := range l.days {
+		if x < sp.x0 || x >= sp.x1 {
+			continue
+		}
+		for i, r := range m.rows {
+			if r.event != nil && sameDay(r.event.StartTime, sp.day) {
+				m.cursor = i
+				break
+			}
+		}
+		break
+	}
+	return m, nil
 }

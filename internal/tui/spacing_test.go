@@ -20,71 +20,43 @@ func screenLines(m Model) []string {
 	return out
 }
 
-var banner = regexp.MustCompile(`^  (TODAY — )?(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d [A-Z][a-z]{2}$`)
+// a day line: "  Tue 06 Oct  · 2 events", "  TODAY  Wed 07 Oct  · 1 event" or the
+// collapsed "  Fri 09 · nothing planned"
+var dayLine = regexp.MustCompile(`^  (TODAY +)?(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d( [A-Z][a-z]{2})?( +· \d+ events?| · nothing planned)$`)
 
-// Every day banner except the first on screen has a blank line above it, so
-// "(no events)" of one day can't read as belonging to the next day's header.
-func TestBlankLineBeforeEveryDayBannerButTheFirst(t *testing.T) {
+// Every day line except the first on screen has a blank line above it, and the
+// old header → rule → "(no events)" triple is gone: no rules inside the body.
+func TestBlankLineBeforeEveryDayLineButTheFirst(t *testing.T) {
 	m := loaded(t)
 	lines := screenLines(m)
 	var at []int
 	for i, l := range lines {
-		if banner.MatchString(l) {
+		if dayLine.MatchString(l) {
 			at = append(at, i)
 		}
 	}
-	if len(at) < 5 {
-		t.Fatalf("expected a week of day banners, found %d:\n%s", len(at), strings.Join(lines, "\n"))
+	if len(at) < 7 {
+		t.Fatalf("expected a line per day of the week, found %d:\n%s", len(at), strings.Join(lines, "\n"))
 	}
 	for k, i := range at {
-		if k == 0 {
-			continue // the first banner follows the header block, no gap needed
-		}
-		if strings.TrimSpace(lines[i-1]) != "" {
-			t.Errorf("banner %q needs a blank line above it, got %q", lines[i], lines[i-1])
-		}
-		// the order stays banner → divider → events
-		if !strings.Contains(lines[i+1], "──") {
-			t.Errorf("banner %q must be followed by its divider, got %q", lines[i], lines[i+1])
+		if k > 0 && strings.TrimSpace(lines[i-1]) != "" {
+			t.Errorf("day line %q needs a blank line above it, got %q", lines[i], lines[i-1])
 		}
 	}
-	// the day before TODAY: "(no events)" sits right above a blank line, then TODAY
 	for i, l := range lines {
-		if strings.Contains(l, "TODAY") {
-			if strings.TrimSpace(lines[i-1]) != "" {
-				t.Errorf("TODAY banner is glued to the previous day: %q", lines[i-1])
-			}
+		if i > 1 && strings.Contains(l, "────") && !strings.Contains(l, "now") {
+			t.Errorf("line %d: no rules in the body any more: %q", i, l)
 		}
 	}
 }
 
-// Clicks land on the right event on both sides of a day gap; banners, dividers
-// and the blank gap select nothing.
+// Clicks land on the right event; day lines, the blank gap and the now line
+// select nothing. Walks every screen line against rowHitTest.
 func TestClickMappingAcrossDayGaps(t *testing.T) {
 	m := loaded(t)
 	lines := screenLines(m)
-	// the "(no events)" placeholders share one title: pair them by order of appearance
-	var phRows, phLines []int
 	for i, r := range m.rows {
-		if r.event != nil && r.event.Title == "(no events)" {
-			phRows = append(phRows, i)
-		}
-	}
-	for ly, l := range lines {
-		if strings.Contains(l, "(no events)") {
-			phLines = append(phLines, ly)
-		}
-	}
-	if len(phRows) != len(phLines) {
-		t.Fatalf("%d placeholder rows but %d on screen", len(phRows), len(phLines))
-	}
-	for k := range phRows {
-		if got := m.rowHitTest(phLines[k]); got != phRows[k] {
-			t.Errorf("click on the %d. '(no events)' (line %d) hit row %d, want %d", k+1, phLines[k], got, phRows[k])
-		}
-	}
-	for i, r := range m.rows {
-		if r.isHeader || r.event == nil || r.event.Title == "(no events)" {
+		if r.isHeader || r.event == nil {
 			continue
 		}
 		y := -1
@@ -94,17 +66,15 @@ func TestClickMappingAcrossDayGaps(t *testing.T) {
 			}
 		}
 		if y < 0 {
-			continue
+			t.Fatalf("event %q not on screen", r.event.Title)
 		}
 		if got := m.rowHitTest(y); got != i {
 			t.Errorf("click on %q (screen line %d) hit row %d, want %d", r.event.Title, y, got, i)
 		}
 	}
 	for ly, l := range lines {
-		isBanner := banner.MatchString(l)
-		isDivider := strings.Contains(l, "────")
-		isGap := strings.TrimSpace(l) == "" && ly+1 < len(lines) && banner.MatchString(lines[ly+1])
-		if (isBanner || isDivider || isGap) && ly > 3 && ly < m.height-3 {
+		blankGap := strings.TrimSpace(l) == "" && ly+1 < len(lines) && dayLine.MatchString(lines[ly+1])
+		if (dayLine.MatchString(l) || blankGap || strings.Contains(l, "── now")) && ly >= headerLines {
 			if got := m.rowHitTest(ly); got != -1 {
 				t.Errorf("screen line %d (%q) must not select a row, hit %d", ly, l, got)
 			}
@@ -127,7 +97,8 @@ func TestScrollWindowWithDayGapsFitsAndKeepsCursorVisible(t *testing.T) {
 		m, _ = send(m, press("+"), press("+"), press("+"))
 		for step := 0; step < 30; step++ {
 			m, _ = send(m, press("j"))
-			room := m.height - 6
+			_, _, _, lh := m.listArea()
+			room := lh - m.barLines()
 			visible, start := m.visibleRowsWithStart(room)
 			used := 0
 			for j := range visible {
@@ -139,7 +110,7 @@ func TestScrollWindowWithDayGapsFitsAndKeepsCursorVisible(t *testing.T) {
 			if m.cursor < start || m.cursor >= start+len(visible) {
 				t.Fatalf("h=%d step %d: cursor %d outside window [%d,%d)", h, step, m.cursor, start, start+len(visible))
 			}
-			if e := cur(m); e != nil {
+			if e := m.selectedEvent(); e != nil {
 				y := -1
 				for ly, l := range screenLines(m) {
 					if strings.Contains(l, e.Title) {
@@ -155,7 +126,7 @@ func TestScrollWindowWithDayGapsFitsAndKeepsCursorVisible(t *testing.T) {
 }
 
 // One language, one date format: English weekday names in the week strip, the
-// day banners and the header, all as "Tue 06 Oct".
+// day lines and the header, all as "Tue 06 Oct".
 func TestOneLanguageAndOneDateFormat(t *testing.T) {
 	m := loaded(t)
 	text := tuitest.Text(m)
@@ -164,21 +135,14 @@ func TestOneLanguageAndOneDateFormat(t *testing.T) {
 			t.Errorf("German weekday %q left over:\n%s", de, text)
 		}
 	}
-	now := time.Now()
-	wantHeader := now.Format("Mon 02 Jan")
-	if !strings.Contains(strings.Split(text, "\n")[0], wantHeader) {
-		t.Errorf("header should show %q:\n%s", wantHeader, strings.Split(text, "\n")[0])
+	lines := strings.Split(text, "\n")
+	if want := time.Now().Format("Mon 02 Jan"); !strings.Contains(lines[0], want) {
+		t.Errorf("header should show %q:\n%s", want, lines[0])
 	}
-	// the strip: "Mon 05 Tue 06 …" for the visible week
-	strip := m.renderWeekNav()
-	if !strings.Contains(tuitestStrip(strip), weekStart(0).Format("Mon 02")) {
-		t.Errorf("week strip should read like %q: %q", weekStart(0).Format("Mon 02"), tuitestStrip(strip))
+	if want := weekStart(0).Format("Mon 02"); !strings.Contains(lines[stripRow], want) {
+		t.Errorf("week strip should read like %q: %q", want, lines[stripRow])
 	}
 	if strings.Contains(text, ", Oct") || regexp.MustCompile(`(Mon|Tue|Wed|Thu|Fri|Sat|Sun), [A-Z][a-z]{2} \d\d`).MatchString(text) {
 		t.Errorf("old 'Tue, Oct 06' style still present:\n%s", text)
 	}
-}
-
-func tuitestStrip(s string) string {
-	return regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(s, "")
 }

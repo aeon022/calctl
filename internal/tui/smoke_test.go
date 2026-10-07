@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -60,7 +61,11 @@ func TestFooterAndHeaderNeverWiderThanTerminal(t *testing.T) {
 	for _, w := range []int{40, 60, 80, 100, 140} {
 		m, _ := tuitest.Send(loaded(t), tuitest.Resize(w, 30))
 		mm := m.(Model)
-		for name, line := range map[string]string{"footer": mm.renderStatusBar(), "header": mm.renderHeader()} {
+		lines := map[string]string{"footer": mm.renderStatusBar()}
+		for i, l := range strings.Split(mm.headerBlock(), "\n") {
+			lines[fmt.Sprintf("header line %d", i)] = l
+		}
+		for name, line := range lines {
 			if lw := lipgloss.Width(line); lw > w {
 				t.Errorf("width %d: %s is %d cells wide: %q", w, name, lw, ansi.Strip(line))
 			}
@@ -71,7 +76,8 @@ func TestFooterAndHeaderNeverWiderThanTerminal(t *testing.T) {
 func TestFooterKeepsMostImportantHintsWhenNarrow(t *testing.T) {
 	m, _ := tuitest.Send(loaded(t), tuitest.Resize(40, 30))
 	out := ansi.Strip(m.(Model).renderStatusBar())
-	if !strings.Contains(out, "↑↓ navigate") || strings.Contains(out, "quit") {
+	// "? help" and "q quit" sit among the first hints so they are dropped last
+	if !strings.Contains(out, "? help") || !strings.Contains(out, "q quit") || strings.Contains(out, "copy") || strings.Contains(out, "free") {
 		t.Errorf("narrow footer should keep the first hints and drop the last: %q", out)
 	}
 }
@@ -79,10 +85,10 @@ func TestFooterKeepsMostImportantHintsWhenNarrow(t *testing.T) {
 func TestEmptyDayShowsNoBogusTimeRange(t *testing.T) {
 	m, _ := tuitest.Send(loaded(t), tuitest.Resize(110, 28))
 	text := tuitest.Text(m)
-	if !strings.Contains(text, "(no events)") {
-		t.Fatalf("test data should contain an empty day:\n%s", text)
+	if !strings.Contains(text, "nothing planned") {
+		t.Fatalf("test data should contain a collapsed empty day:\n%s", text)
 	}
-	if strings.Contains(text, "00:00–00:00") {
-		t.Errorf("an empty day must not print a 00:00–00:00 time range:\n%s", text)
+	if strings.Contains(text, "00:00–00:00") || strings.Contains(text, "(no events)") {
+		t.Errorf("an empty day collapses to one 'nothing planned' line, no bogus range or placeholder:\n%s", text)
 	}
 }

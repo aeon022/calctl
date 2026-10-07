@@ -257,6 +257,10 @@ Datetime format: `YYYY-MM-DDTHH:MM:SS` (local time, no timezone suffix).
 
 ---
 
+## TUI Layout
+
+Header (scope + week number + date), a clickable week strip (event counts, today, selected day), then the agenda: empty days collapse to one line, each calendar gets a stable colored dot, past events are dimmed, and a `now` line marks the current time today. From 120 columns the agenda sits in a panel next to the selected event's details and a month mini-calendar. Click a day in the strip to jump to it, `◀`/`▶` change the week.
+
 ## TUI Keys
 
 Open the TUI with `calctl` (no arguments).

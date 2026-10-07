@@ -128,8 +128,21 @@ func loadCalendarsCmd() tea.Cmd {
 	}
 }
 
+// rowKind says what a non-event row (isHeader) draws; the zero value is a day
+// header with events under it.
+type rowKind int
+
+const (
+	rowDay      rowKind = iota // "Wed 07 Oct · 3 events"
+	rowEmptyDay                // collapsed: "Fri 09 · nothing planned" — one dim line
+	rowNow                     // thin "── now 16:26 ──" line inside today
+)
+
 type row struct {
-	isHeader bool
+	isHeader bool // not selectable: day header, collapsed empty day or the now line
+	kind     rowKind
 	label    string
+	day      time.Time // header rows: the day they introduce
+	count    int       // rowDay: events that day
 	event    *models.Event
 }
