@@ -172,7 +172,22 @@ func (m Model) headerBlock() string {
 	left := styleHeader.Render("calctl") + styleStatusBar.Render(" · "+m.sectionLabel())
 	mid := styleStatusBar.Render(fmt.Sprintf("%s · KW%02d", scope, kw))
 	head := ui.Header(m.width, left, mid, time.Now().Format(dateFmt))
+	if m.view == viewCreate || m.view == viewDetail || m.view == viewFree {
+		return strings.Join([]string{head, ui.Divider(m.width, ""), ""}, "\n")
+	}
 	return strings.Join([]string{head, ui.Divider(m.width, ""), "", m.stripLayout().text, ""}, "\n")
+}
+
+// bodyPanel frames a secondary view's content in a full-width titled panel
+// that fills the body budget under the (strip-less) header.
+func (m Model) bodyPanel(title, body string) string {
+	return ui.Panel(m.width, max(m.height-4, 3), title, body, true)
+}
+
+// popup frames dialog content (help, pickers) in a titled panel sized to fit.
+func popup(width int, title, body string) string {
+	body = lipgloss.NewStyle().Width(max(width-4, 1)).Render(body)
+	return ui.Panel(width, strings.Count(body, "\n")+3, title, body, true)
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -485,28 +500,20 @@ func (m Model) eventDetailLines(e *models.Event, w int) []string {
 }
 
 func (m Model) renderCreate() string {
-	var b strings.Builder
-	b.WriteString("\n")
-
-	heading := "New Event"
+	title := "New Event"
 	if m.editTarget != nil {
-		heading = "Edit Event"
+		title = "Edit Event"
 	}
-	inner := strings.Builder{}
-	inner.WriteString(styleHeader.Render(heading) + "\n\n")
+	var inner strings.Builder
 	for i, inp := range m.inputs {
-		inp.SetWidth(min(60, max(m.width-27, 8))) // margin 4 + border 2 + padding 4 + label 12 + gap 2
-		label := formLabels[i]
+		inp.SetWidth(min(60, max(m.width-24, 8))) // border 2 + padding 2 + label 12 + gap 2 + slack
 		labelStyle := styleFormLabel
 		if i == m.inputIdx {
 			labelStyle = styleFormLabelActive
 		}
-		inner.WriteString(labelStyle.Render(label) + "  " + inp.View() + "\n")
+		inner.WriteString(" " + labelStyle.Render(formLabels[i]) + "  " + inp.View() + "\n")
 	}
-
-	b.WriteString(styleFormBox.Render(inner.String()))
-	m.padToStatusBar(&b)
-	return b.String()
+	return m.bodyPanel(title, "\n"+inner.String())
 }
 
 func (m Model) renderDetail() string {
@@ -516,8 +523,7 @@ func (m Model) renderDetail() string {
 	e := m.rows[m.cursor].event
 
 	var b strings.Builder
-	b.WriteString("\n")
-	b.WriteString(styleHeader.Render(e.Title) + "\n\n")
+	b.WriteString(styleHeader.Render(humanize.Truncate(e.Title, max(m.width-8, 4))) + "\n\n")
 	b.WriteString(fmt.Sprintf("  Date      %s\n", e.StartTime.Format(dateFmt+" 2006")))
 	if e.AllDay {
 		b.WriteString("  Time      All day\n")
@@ -548,11 +554,8 @@ func (m Model) renderDetail() string {
 	if e.Notes != "" {
 		b.WriteString("\n" + wordWrap(e.Notes, max(m.width-12, 10)) + "\n")
 	}
-	rendered := styleDetail.Width(max(m.width-4, 10)).Render(b.String())
-	var out strings.Builder
-	out.WriteString(rendered)
-	m.padToStatusBar(&out)
-	return out.String()
+	body := lipgloss.NewStyle().Width(max(m.width-4, 10)).Render(b.String())
+	return m.bodyPanel("Event", body)
 }
 
 func (m Model) renderFree() string {
@@ -573,11 +576,10 @@ func (m Model) renderFree() string {
 	}, cfg.MinFreeSlot)
 
 	var b strings.Builder
-	b.WriteString("\n  " + styleHeader.Render("Free Slots") + "\n\n")
+	b.WriteString("\n")
 	if len(slots) == 0 {
 		b.WriteString(styleEmpty.Render("  No free slots found.") + "\n")
-		m.padToStatusBar(&b)
-		return b.String()
+		return m.bodyPanel("Free Slots", b.String())
 	}
 	var lastDate string
 	for _, sl := range slots {
@@ -591,22 +593,7 @@ func (m Model) renderFree() string {
 			models.FormatDuration(sl.Duration),
 		))
 	}
-	m.padToStatusBar(&b)
-	return b.String()
-}
-
-// padToStatusBar pins assembleFrame's trailing status bar to the bottom of
-// the terminal instead of letting it glue itself right under a short view —
-// pads with blank lines up to the same content budget renderList already
-// uses (m.height - 6: header + week-nav + divider above, status bar below).
-func (m Model) padToStatusBar(b *strings.Builder) {
-	if m.height <= 0 {
-		return
-	}
-	contentHeight := m.height - 6
-	for used := strings.Count(b.String(), "\n"); used < contentHeight; used++ {
-		b.WriteString("\n")
-	}
+	return m.bodyPanel("Free Slots", b.String())
 }
 
 // footerRight is the right side of the status bar: transient state (saving,
@@ -773,10 +760,7 @@ func (m Model) openHelp() Model {
 
 	safeH := max(6, len(bgLines))
 	popH := min(safeH, 22)
-	popW := min(70, m.width)
-	if popW < 40 {
-		popW = 40
-	}
+	popW := max(min(70, m.width), 12)
 
 	vp := viewport.New(viewport.WithWidth(popW-6), viewport.WithHeight(popH-5)) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
 	vp.SetContent(m.helpContent())
@@ -797,17 +781,11 @@ func (m Model) renderHelpPopup() string {
 		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.helpVP.ScrollPercent()*100), footer)
 	}
 	body := m.helpVP.View() + "\n" + styleStatusBar.Render(footer)
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorBlue).
-		Padding(1, 2).
-		Width(m.helpPopW).
-		Render(body)
+	return ui.Panel(m.helpPopW, m.helpPopH, "Help", body, true)
 }
 
 func (m Model) renderCalendarPicker() string {
 	var b strings.Builder
-	b.WriteString(styleHeader.Render("Default Calendar") + "\n")
 	b.WriteString(styleStatusBar.Render("New events use this calendar when --cal isn't given.") + "\n\n")
 
 	if m.availableCalendars == nil {
@@ -827,10 +805,5 @@ func (m Model) renderCalendarPicker() string {
 		}
 	}
 	b.WriteString("\n" + styleStatusBar.Render("j/k move  enter set default  esc cancel"))
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorBlue).
-		Padding(1, 2).
-		Width(min(50, m.width-4)).
-		Render(b.String())
+	return popup(max(min(50, m.width), 12), "Default Calendar", b.String())
 }

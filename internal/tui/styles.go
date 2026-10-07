@@ -75,12 +75,6 @@ var (
 	styleLoading = lipgloss.NewStyle().
 			Foreground(colorAmber)
 
-	styleDetail = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
-			Padding(1, 2).
-			Margin(1, 2)
-
 	styleFormLabel = lipgloss.NewStyle().
 			Foreground(colorMuted).
 			Width(12)
@@ -89,12 +83,6 @@ var (
 				Foreground(colorBlue).
 				Bold(true).
 				Width(12)
-
-	styleFormBox = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
-			Padding(1, 2).
-			Margin(1, 2)
 
 	styleDeleteConfirm = lipgloss.NewStyle().
 				Foreground(colorRed).
