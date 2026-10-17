@@ -32,7 +32,7 @@ func Serve() error {
 	s.AddTool(toolSync(), handleSync)
 	s.AddTool(toolFreeSlots(), handleFreeSlots)
 	s.AddTool(toolCreateEvent(), handleCreateEvent)
-	s.AddTool(toolDeleteEvent(), handleDeleteEvent)
+	s.AddTool(toolDeleteEvent(), confirmed(handleDeleteEvent))
 
 	return server.ServeStdio(s)
 }
@@ -123,6 +123,7 @@ func toolCreateEvent() mcp.Tool {
 
 func toolDeleteEvent() mcp.Tool {
 	return mcp.NewTool("delete_event",
+		confirmParam,
 		mcp.WithDescription("Delete a calendar event by title and date. Use list_events first to confirm the exact title and date."),
 		mcp.WithString("title",
 			mcp.Required(),

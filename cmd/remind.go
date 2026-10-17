@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/aeon022/missionctl-core/applescript"
 	"os/exec"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ default) and send a macOS notification. Same pattern habctl's own
 		title := fmt.Sprintf("%d event(s) starting soon", len(titles))
 		body := strings.Join(titles, ", ")
 
-		script := fmt.Sprintf(`display notification %q with title %q`, body, title)
+		script := fmt.Sprintf(`display notification "%s" with title "%s"`, applescript.EscapeLine(body), applescript.EscapeLine(title))
 		out, err := exec.Command("osascript", "-e", script).CombinedOutput()
 		if err != nil {
 			fmt.Printf("Reminder: %s — %s\n", title, body)
