@@ -276,7 +276,7 @@ Open the TUI with `calctl` (no arguments).
 | `e` | Edit selected event |
 | `d` | Delete selected event |
 | `s` | Sync from Apple Calendar |
-| `T` | Next colour theme — switches live and is saved for the whole suite |
+| `T` | Colour theme picker — previews live, enter keeps it for the whole suite |
 | `f` | Open free slot finder |
 | `+` or `]` | Next week |
 | `-` or `[` | Previous week |

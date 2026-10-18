@@ -106,7 +106,7 @@ var paletteCommands = []palette.Command{
 	{Name: "calendar", Desc: "Set default calendar for new events", Key: "c"},
 	{Name: "sync", Desc: "Sync from Apple Calendar", Key: "s"},
 	{Name: "search", Desc: "Filter events", Key: "/"},
-	{Name: "theme", Desc: "Next colour theme (saved for the whole suite)", Key: "T"},
+	{Name: "theme", Desc: "Colour theme picker with live preview (saved for the whole suite)", Key: "T"},
 	{Name: "help", Desc: "Show help", Key: "?"},
 	{Name: "quit", Desc: "Quit calctl", Key: "q"},
 }

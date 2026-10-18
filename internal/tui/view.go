@@ -732,7 +732,7 @@ func (m Model) helpContent() string {
 		Row("j / ↓", "next event").
 		Row("k / ↑", "previous event").
 		Row("h / ←", "previous week").
-		Row("T", "next colour theme (saved for the whole suite)").
+		Row("T", "colour theme picker with live preview (saved for the whole suite)").
 		Row("l / →", "next week").
 		Row("+ / -", "show more / fewer days (7–90)").
 		Row("1-9", "jump to nth visible event").
