@@ -267,7 +267,7 @@ func (m Model) listLines(w, h int) []string {
 	if !hasEvent && (m.searchQ != "" || len(m.events) == 0) {
 		title, hint := "No events match your search", ""
 		if m.searchQ == "" {
-			title, hint = "No events yet", "press s to sync from Apple Calendar, or calctl import to add one"
+			title, hint = "Welcome to calctl", calOnboarding()
 		}
 		return append(out, strings.Split(emptystate.Render(w, room, "", title, hint), "\n")...)
 	}
@@ -728,6 +728,7 @@ func (m Model) helpContent() string {
 		Row("j / ↓", "next event").
 		Row("k / ↑", "previous event").
 		Row("h / ←", "previous week").
+		Row("T", "next colour theme (saved for the whole suite)").
 		Row("l / →", "next week").
 		Row("+ / -", "show more / fewer days (7–90)").
 		Row("1-9", "jump to nth visible event").
@@ -806,4 +807,14 @@ func (m Model) renderCalendarPicker() string {
 	}
 	b.WriteString("\n" + styleStatusBar.Render("j/k move  enter set default  esc cancel"))
 	return popup(max(min(50, m.width), 12), "Default Calendar", b.String())
+}
+
+// calOnboarding is the first-run hint of an empty calendar: what to try first.
+func calOnboarding() string {
+	return strings.Join([]string{
+		"○  s   sync Apple Calendar",
+		"○  n   add your first event",
+		"○  :   command palette",
+		"○  T   pick a colour theme",
+	}, "\n")
 }

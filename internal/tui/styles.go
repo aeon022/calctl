@@ -25,69 +25,68 @@ var adaptive = func() func(light, dark string) color.Color {
 }()
 
 var (
+	// Rebuilt by refreshStyles when the theme changes.
+	colorBlue, colorGreen, colorRed, colorAmber, colorMuted, colorSubtle, colorCyan                                                                                                                 color.Color
+	styleHeader, styleDateBanner, styleTitle, styleTitleSelected, styleCal, styleOK, styleEmpty, styleStatusBar, styleError, styleLoading, styleFormLabel, styleFormLabelActive, styleDeleteConfirm lipgloss.Style
+)
+
+func init() {
+	refreshStyles()
+	theme.OnChange(refreshStyles)
+}
+
+// refreshStyles builds every cached colour and style from the active theme (live theme switching).
+func refreshStyles() {
 	// Shared across the suite via missionctl-core/theme.
-	colorBlue   = theme.BlueV2
-	colorGreen  = theme.GreenV2
-	colorRed    = theme.RedV2
-	colorAmber  = theme.AmberV2
-	colorMuted  = theme.MutedV2
+	colorBlue = theme.BlueV2
+	colorGreen = theme.GreenV2
+	colorRed = theme.RedV2
+	colorAmber = theme.AmberV2
+	colorMuted = theme.MutedV2
 	colorSubtle = theme.SubtleV2
-	colorCyan   = adaptive("30", "43")
-
+	colorCyan = adaptive("30", "43")
 	styleHeader = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorBlue)
-
+		Bold(true).
+		Foreground(colorBlue)
 	styleDateBanner = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorCyan)
-
+		Bold(true).
+		Foreground(colorCyan)
 	styleTitle = lipgloss.NewStyle()
-
 	styleTitleSelected = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(theme.SelectedFgV2).
-				Background(theme.SelectedBgV2)
-
+		Bold(true).
+		Foreground(theme.SelectedFgV2).
+		Background(theme.SelectedBgV2)
 	styleCal = lipgloss.NewStyle().
-			Foreground(colorMuted)
-
+		Foreground(colorMuted)
 	styleOK = lipgloss.NewStyle().Foreground(colorGreen)
-
 	styleEmpty = lipgloss.NewStyle().
-			Foreground(colorSubtle).
-			Italic(true)
-
+		Foreground(colorSubtle).
+		Italic(true)
 	styleStatusBar = lipgloss.NewStyle().
-			Foreground(colorMuted)
-
+		Foreground(colorMuted)
 	// Solid badge, not just colored text — plain foreground-only red in the
 	// header's top-right corner (e.g. a delete's "no matching event found")
 	// was easy to miss entirely against everything else competing for that
 	// one line. A filled badge draws the eye regardless of where on screen
 	// it sits.
 	styleError = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(theme.OnAccentV2).
-			Background(colorRed).
-			Padding(0, 1)
-
+		Bold(true).
+		Foreground(theme.OnAccentV2).
+		Background(colorRed).
+		Padding(0, 1)
 	styleLoading = lipgloss.NewStyle().
-			Foreground(colorAmber)
-
+		Foreground(colorAmber)
 	styleFormLabel = lipgloss.NewStyle().
-			Foreground(colorMuted).
-			Width(12)
-
+		Foreground(colorMuted).
+		Width(12)
 	styleFormLabelActive = lipgloss.NewStyle().
-				Foreground(colorBlue).
-				Bold(true).
-				Width(12)
-
+		Foreground(colorBlue).
+		Bold(true).
+		Width(12)
 	styleDeleteConfirm = lipgloss.NewStyle().
-				Foreground(colorRed).
-				Bold(true)
-)
+		Foreground(colorRed).
+		Bold(true)
+}
 
 // ── command palette (":") ────────────────────────────────────────────────────
 //
@@ -107,6 +106,7 @@ var paletteCommands = []palette.Command{
 	{Name: "calendar", Desc: "Set default calendar for new events", Key: "c"},
 	{Name: "sync", Desc: "Sync from Apple Calendar", Key: "s"},
 	{Name: "search", Desc: "Filter events", Key: "/"},
+	{Name: "theme", Desc: "Next colour theme (saved for the whole suite)", Key: "T"},
 	{Name: "help", Desc: "Show help", Key: "?"},
 	{Name: "quit", Desc: "Quit calctl", Key: "q"},
 }

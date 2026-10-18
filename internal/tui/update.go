@@ -10,6 +10,7 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/missionctl-core/lastsync"
 	"github.com/aeon022/missionctl-core/palette"
+	"github.com/aeon022/missionctl-core/theme"
 )
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -533,6 +534,15 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			return m, tea.Batch(syncCmd(m.weekOffset, m.daysAhead), m.sp.Tick)
 		}
+
+	case "T": // live theme switch; the choice is saved for every suite tool
+		name, err := theme.Cycle()
+		if err != nil {
+			m.status = "Theme: " + err.Error()
+		} else {
+			m.status = "Theme: " + name
+		}
+		m.statusTime = time.Now()
 
 	case "f":
 		m.view = viewFree
