@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/aeon022/missionctl-core/themepicker"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
@@ -63,6 +64,7 @@ const undoWindow = 5 * time.Second
 var formLabels = [fCount]string{"Title", "Date", "Time", "Duration", "Calendar", "Location"}
 
 type Model struct {
+	themePicker  themepicker.Picker // the "T" popup
 	events       []models.Event
 	rows         []row
 	cursor       int

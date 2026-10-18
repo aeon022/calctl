@@ -1,13 +1,14 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/aeon022/missionctl-core/theme"
 	"github.com/aeon022/missionctl-core/tuitest"
 )
 
-func TestThemeKeySwitchesLiveAndSaves(t *testing.T) {
+func TestThemeKeyOpensPickerWithLivePreview(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	orig := theme.Current()
 	t.Cleanup(func() { _ = theme.Apply(orig) })
@@ -15,6 +16,11 @@ func TestThemeKeySwitchesLiveAndSaves(t *testing.T) {
 	m, _ := tuitest.Send(New(), tuitest.Resize(100, 30), eventsLoadedMsg{})
 	before := styleHeader.GetForeground()
 	mm, _ := tuitest.Send(m, tuitest.Key("T"))
+	if !strings.Contains(tuitest.Text(mm), "Colour theme") {
+		t.Fatalf("T opens the theme popup:\n%s", tuitest.Text(mm))
+	}
+	mm, _ = tuitest.Send(mm, tuitest.Key("j"))     // previews the next theme live
+	mm, _ = tuitest.Send(mm, tuitest.Key("enter")) // keeps it
 
 	if theme.Current() == orig {
 		t.Fatalf("T must switch to the next theme, still %q", orig)

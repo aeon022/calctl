@@ -10,7 +10,6 @@ import (
 	"github.com/aeon022/calctl/internal/config"
 	"github.com/aeon022/missionctl-core/lastsync"
 	"github.com/aeon022/missionctl-core/palette"
-	"github.com/aeon022/missionctl-core/theme"
 )
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -208,6 +207,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.themePicker.IsOpen() { // the "T" popup owns the keyboard while it is open
+			if text := m.themePicker.Key(msg.String()); text != "" {
+				m.status = text
+				m.statusTime = time.Now()
+			}
+			return m, nil
+		}
 		return m.handleKey(msg)
 	}
 
@@ -535,14 +541,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(syncCmd(m.weekOffset, m.daysAhead), m.sp.Tick)
 		}
 
-	case "T": // live theme switch; the choice is saved for every suite tool
-		name, err := theme.Cycle()
-		if err != nil {
-			m.status = "Theme: " + err.Error()
-		} else {
-			m.status = "Theme: " + name
-		}
-		m.statusTime = time.Now()
+	case "T": // theme picker with live preview; the choice is saved for every suite tool
+		m.themePicker.Open()
 
 	case "f":
 		m.view = viewFree

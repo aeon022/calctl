@@ -36,7 +36,11 @@ func (m Model) assembleFrame(content string) string {
 }
 
 func (m Model) View() tea.View {
-	v := tea.NewView(m.viewContent())
+	content := m.viewContent()
+	if m.themePicker.IsOpen() { // not dimmed: the live preview behind the popup is the point
+		content = overlay.Center(content, m.themePicker.View(), m.width, m.height, 0)
+	}
+	v := tea.NewView(content)
 	// v2: AltScreen/MouseMode are per-View fields, not Program options.
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeAllMotion
