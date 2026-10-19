@@ -208,7 +208,8 @@ func TestBuildRows_PreservesDayGroupingRatherThanRankingByMatchQuality(t *testin
 		{ID: "1", Title: "budgetctl release", StartTime: day1, EndTime: day1.Add(time.Hour)},
 		{ID: "2", Title: "budget review", StartTime: day2, EndTime: day2.Add(time.Hour)},
 	}
-	rows := buildRows(events, 0, 7, "budget")
+	// a fixed "now" far from the window: on a Monday day1 would be today and get a "now" line row
+	rows := buildRowsAt(events, 0, 7, "budget", day1.AddDate(0, -1, 0))
 	var order []string
 	for _, r := range rows {
 		if r.isHeader {
