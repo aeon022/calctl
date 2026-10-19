@@ -21,3 +21,4 @@ google_token.json
 .vscode/
 *.swp
 dist/
+completions/
