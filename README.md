@@ -4,6 +4,14 @@ A terminal calendar client for Apple Calendar. Sync, browse, and manage events f
 
 Part of the [missionctl](../README.md) suite.
 
+**Install**
+
+```bash
+brew install aeon022/tap/calctl
+```
+
+Prebuilt binaries for macOS and Linux (arm64, amd64) are on the [Releases](https://github.com/aeon022/calctl/releases) page. Questions: see [SUPPORT.md](SUPPORT.md).
+
 ---
 
 ## Quick Start
