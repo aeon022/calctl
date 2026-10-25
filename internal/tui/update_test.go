@@ -763,6 +763,9 @@ func TestBuildRowsDSTBoundaryDays(t *testing.T) {
 	count := func(rows []row, header string) (n int) {
 		in := false
 		for _, r := range rows {
+			if r.kind == rowNow { // the "now" line sits inside today's group (this test ran red on the DST day itself)
+				continue
+			}
 			if r.isHeader {
 				in = strings.HasSuffix(r.label, header)
 				continue
