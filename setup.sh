@@ -81,3 +81,6 @@ echo -e "${GREEN}${BOLD}Done! Try:${NC}"
 echo -e "  ${YELLOW}calctl sync${NC}           — sync Apple Calendar"
 echo -e "  ${YELLOW}calctl list --today${NC}   — show today's events"
 echo -e "  ${YELLOW}calctl free --next 7${NC}  — find free slots this week"
+
+# man pages (best effort): man calctl
+mkdir -p "$HOME/.local/share/man/man1" && "${INSTALL_DIR:-$HOME/.local/bin}/calctl" man "$HOME/.local/share/man/man1" >/dev/null 2>&1 || true
