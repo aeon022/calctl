@@ -31,6 +31,22 @@ func (e Event) Duration() time.Duration {
 	return e.EndTime.Sub(e.StartTime)
 }
 
+// Describe renders the event on one line for before/after reports.
+func (e Event) Describe() string {
+	when := e.StartTime.Format("Mon, Jan 02 2006 15:04") + "–" + e.EndTime.Format("15:04")
+	if e.AllDay {
+		when = e.StartTime.Format("Mon, Jan 02 2006") + " (all day)"
+	}
+	out := e.Title + "  " + when
+	if e.Calendar != "" {
+		out += "  [" + e.Calendar + "]"
+	}
+	if e.Location != "" {
+		out += "  @ " + e.Location
+	}
+	return out
+}
+
 // Overlaps reports whether e and other occupy any of the same time — a
 // classic half-open interval overlap check ([start, end) vs [start, end)).
 // All-day events never conflict (they're not a real time-slot booking),

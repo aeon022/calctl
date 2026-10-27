@@ -32,6 +32,7 @@ func Serve() error {
 	s.AddTool(toolSync(), handleSync)
 	s.AddTool(toolFreeSlots(), handleFreeSlots)
 	s.AddTool(toolCreateEvent(), handleCreateEvent)
+	s.AddTool(toolUpdateEvent(), handleUpdateEvent)
 	s.AddTool(toolDeleteEvent(), confirmed(handleDeleteEvent))
 
 	return server.ServeStdio(s)
@@ -118,6 +119,21 @@ func toolCreateEvent() mcp.Tool {
 		mcp.WithBoolean("all_day",
 			mcp.Description("Whether this is an all-day event"),
 		),
+	)
+}
+
+func toolUpdateEvent() mcp.Tool {
+	return mcp.NewTool("update_event",
+		mcp.WithDescription("Change an existing event: move it, rename it, change location, notes or calendar. Only the fields you pass change; moving start keeps the duration unless end is given. Use list_events first to confirm the exact title and date. Returns the old and the new values and warns about overlaps. Only do this when the user asked for the change."),
+		mcp.WithString("title", mcp.Required(), mcp.Description("Exact current event title")),
+		mcp.WithString("date", mcp.Required(), mcp.Description("Day the event is on now, YYYY-MM-DD")),
+		mcp.WithString("in_calendar", mcp.Description("Only look in this calendar (needed if the title exists twice that day)")),
+		mcp.WithString("new_title", mcp.Description("New title")),
+		mcp.WithString("start", mcp.Description("New start, YYYY-MM-DDTHH:MM:SS")),
+		mcp.WithString("end", mcp.Description("New end, YYYY-MM-DDTHH:MM:SS")),
+		mcp.WithString("location", mcp.Description("New location (empty string clears it)")),
+		mcp.WithString("notes", mcp.Description("New notes (empty string clears them)")),
+		mcp.WithString("calendar", mcp.Description("Move to this calendar")),
 	)
 }
 
@@ -306,6 +322,49 @@ func handleCreateEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		end.Format("15:04"),
 		calendarSuffix(e.Calendar),
 	)), nil
+}
+
+func handleUpdateEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	title, dateStr := req.GetString("title", ""), req.GetString("date", "")
+	if title == "" || dateStr == "" {
+		return mcp.NewToolResultError("title and date are required"), nil
+	}
+	date, err := parseDate(dateStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid date: " + err.Error()), nil
+	}
+	var p calendar.Patch
+	args := req.GetArguments()
+	for key, dst := range map[string]**string{"new_title": &p.Title, "location": &p.Location, "notes": &p.Notes, "calendar": &p.Calendar} {
+		if _, ok := args[key]; ok {
+			v := req.GetString(key, "")
+			*dst = &v
+		}
+	}
+	for key, dst := range map[string]**time.Time{"start": &p.Start, "end": &p.End} {
+		if v := req.GetString(key, ""); v != "" {
+			t, err := calendar.ParseWhen(v)
+			if err != nil {
+				return mcp.NewToolResultError(key + ": " + err.Error()), nil
+			}
+			*dst = &t
+		}
+	}
+	s, err := store.New(config.DBPath(), config.Shared())
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	defer s.Close()
+	r, err := calendar.Update(s, title, date, req.GetString("in_calendar", ""), p)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	activity.Log("calctl", "updated", r.New.Title)
+	out := "Updated.\nBefore: " + r.Old.Describe() + "\nAfter:  " + r.New.Describe()
+	for _, c := range r.Conflicts {
+		out += "\n⚠ overlaps with " + c.Describe()
+	}
+	return mcp.NewToolResultText(out), nil
 }
 
 func handleDeleteEvent(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

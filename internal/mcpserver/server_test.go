@@ -83,6 +83,7 @@ func TestToolsAreRegisteredWithValidSchema(t *testing.T) {
 		{"sync", toolSync()},
 		{"find_free_slots", toolFreeSlots()},
 		{"create_event", toolCreateEvent()},
+		{"update_event", toolUpdateEvent()},
 		{"delete_event", toolDeleteEvent()},
 	} {
 		if tc.tool.Name != tc.name {

@@ -50,6 +50,7 @@ Prebuilt binaries for macOS and Linux (arm64, amd64) are on the [Releases](https
 | `calctl list --today` | List today's events |
 | `calctl list --week` | List this week's events |
 | `calctl add "Meeting" --start 2026-07-07T10:00:00 --end 2026-07-07T11:00:00` | Create an event |
+| `calctl update "Meeting" --on 2026-07-07 --start 2026-07-08T10:00` | Move or change an event; prints before/after |
 | `calctl free --today --duration 30` | Find 30-minute free slots today |
 | `calctl import event.md` | Create event from Markdown file |
 | `calctl calendars` | List all calendar names |
@@ -117,6 +118,14 @@ calctl list --week --format json
 ```
 
 ---
+
+### `calctl update`
+
+```
+calctl update TITLE --on YYYY-MM-DD [--in CALENDAR] [--title T] [--start DT] [--end DT] [--location L] [--notes N] [--calendar C]
+```
+
+Changes one existing event (found by exact title and day, from the last `calctl sync`). Only the flags you pass change; a new `--start` keeps the duration unless `--end` is given. Prints the old and new values and warns about overlaps. `--calendar` creates a copy in the other calendar and deletes the original (not for recurring events).
 
 ### `calctl add`
 
@@ -345,6 +354,7 @@ Restart Claude Desktop after saving. `calctl` must be on your `PATH`.
 | `sync` | `days` | Sync N days ahead from Apple Calendar |
 | `find_free_slots` | `from`, `to`, `min_duration_minutes`, `work_hours_from`, `work_hours_to` | Find free time slots in a range |
 | `create_event` | `title`, `start`, `end`, `calendar`, `notes` | Create a new calendar event |
+| `update_event` | `title`, `date`, `new_title`, `start`, `end`, `location`, `notes`, `calendar` | Change an event; returns old and new values |
 | `delete_event` | `title`, `date` | Delete an event by title and date |
 
 ### AI Workflow Examples
