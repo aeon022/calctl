@@ -204,15 +204,27 @@ func (s *Store) DeleteBySource(ctx context.Context, source string, from, to time
 // time, not ID, since AppleScript-created events don't hand back their
 // EventKit identifier at creation time.
 //
+// An echo that matches nothing is a ghost (its event was deleted in
+// Calendar.app after `add`/`update`) and is dropped too, unless it is under
+// echoGrace old: then the sync may simply have raced the write.
+//
 // Both the CLI (`calctl sync`) and the MCP `sync` tool call this — it used
 // to live only in the CLI path, so the MCP path silently accumulated
 // duplicate rows for every event created through it.
+const echoGrace = 2 * time.Minute
+
 func (s *Store) ReconcileEchoes(ctx context.Context, synced []models.Event, from, to time.Time) error {
 	echoes, err := s.ListBySource(ctx, "calctl", from, to)
 	if err != nil {
 		return err
 	}
 	for _, echo := range echoes {
+		if time.Since(echo.UpdatedAt) > echoGrace {
+			if err := s.DeleteByID(ctx, echo.ID); err != nil {
+				return err
+			}
+			continue
+		}
 		for _, ev := range synced {
 			if ev.Title == echo.Title && ev.StartTime.Equal(echo.StartTime) {
 				if err := s.DeleteByID(ctx, echo.ID); err != nil {

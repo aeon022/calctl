@@ -191,6 +191,7 @@ func TestReconcileEchoesDropsMatchingEcho(t *testing.T) {
 	unmatched := sampleEvent("calctl-def", start)
 	unmatched.Title = "Unmatched"
 	unmatched.Source = "calctl"
+	unmatched.UpdatedAt = time.Now() // fresh: could still be racing the sync
 	if err := s.UpsertEvent(ctx, echo); err != nil {
 		t.Fatalf("UpsertEvent echo: %v", err)
 	}
@@ -221,6 +222,7 @@ func TestReconcileEchoesKeepsEchoWhenStartTimeDiffers(t *testing.T) {
 	echo := sampleEvent("calctl-abc", start)
 	echo.Title = "Zahnarzt"
 	echo.Source = "calctl"
+	echo.UpdatedAt = time.Now()
 	if err := s.UpsertEvent(ctx, echo); err != nil {
 		t.Fatalf("UpsertEvent: %v", err)
 	}
@@ -236,5 +238,25 @@ func TestReconcileEchoesKeepsEchoWhenStartTimeDiffers(t *testing.T) {
 	}
 	if len(remaining) != 1 {
 		t.Fatalf("expected the echo to survive a non-matching sync, got %+v", remaining)
+	}
+}
+
+func TestReconcileEchoesDropsGhostEcho(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	start := time.Date(2026, 7, 26, 22, 0, 0, 0, time.UTC)
+	from, to := start.Add(-time.Hour), start.Add(time.Hour)
+
+	ghost := sampleEvent("calctl-ghost", start)
+	ghost.Source = "calctl"
+	ghost.UpdatedAt = time.Now().Add(-time.Hour) // event was deleted in Calendar.app since
+	if err := s.UpsertEvent(ctx, ghost); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReconcileEchoes(ctx, nil, from, to); err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := s.ListBySource(ctx, "calctl", from, to); len(left) != 0 {
+		t.Fatalf("ghost survived: %+v", left)
 	}
 }
